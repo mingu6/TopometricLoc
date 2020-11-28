@@ -1,4 +1,10 @@
 import numpy as np
+from scipy.sparse import csc_matrix, coo_matrix
+from sklearn.preprocessing import normalize
+
+
+def logistic(x, theta1, theta2):
+    return 1. / (1. + np.exp(- theta1 * (x - theta2)))
 
 
 def shortest_dist_segments(p0, u, p1, v):
@@ -108,3 +114,132 @@ def shortest_dist_segments(p0, u, p1, v):
     dmin[t_gt_1] = np.minimum(dmin[t_gt_1], d_s_min)
 
     return dmin
+
+
+def odom_deviation_nonself(mapG, odom, att_wt):
+    source, dest, tO1, tO2, tD1, tD2, tOD = \
+        zip(*[(s, d, data["tO1"], data["tO2"],
+               data["tD1"], data["tD2"], data["tOD"])
+              for (s, d, k, data) in mapG.edges.data(keys=True)
+              if k == "nonself"])
+
+    odomC = odom * att_wt
+    tO1 = np.asarray(tO1) * att_wt
+    tO2 = np.asarray(tO2) * att_wt
+    tD1 = np.asarray(tD1) * att_wt
+    tD2 = np.asarray(tD2) * att_wt
+    tOD = np.asarray(tOD) * att_wt
+
+    # compute best deviation
+    d11 = shortest_dist_segments(tO1 + odomC, -tO1,
+                                 tD1, tOD - tD1)
+    d12 = shortest_dist_segments(tO1 + odomC, -tO1,
+                                 tOD, tD2 - tOD)
+    d21 = shortest_dist_segments(odomC, tO2,
+                                 tD1, tOD - tD1)
+    d22 = shortest_dist_segments(odomC, tO2,
+                                 tOD, tD2 - tOD)
+    d = np.stack((d11, d12, d21, d22), axis=1).min(axis=1)
+    return list(source), list(dest), d
+
+
+def odom_deviation_self(mapG, odom, att_wt):
+    source, dest, tO1, tO2 = \
+        zip(*[(s, d, data["tO1"], data["tO2"])
+              for (s, d, k, data) in mapG.edges.data(keys=True)
+              if k == "self"])
+
+    odomC = odom * att_wt
+    tO1 = np.asarray(tO1) * att_wt
+    tO2 = np.asarray(tO2) * att_wt
+
+    # compute best deviation
+    d = shortest_dist_segments(tO1 + odomC, -tO1, np.zeros_like(tO2), tO2)
+    return list(source), list(dest), d
+
+
+def create_deviation_matrix(mapG, odom, Eoo, w):
+    N = len(mapG)
+    att_wt = np.ones(6)
+    att_wt[3:] *= w
+
+    # non-self transitions
+
+    source_ns, dest_ns, dev_ns = odom_deviation_nonself(mapG, odom, att_wt)
+
+    # self-transitions
+
+    source_s, dest_s, dev_s = odom_deviation_self(mapG, odom, att_wt)
+
+    # concatenate into single vectors
+
+    source = np.array(source_ns + source_s, dtype=np.int)  # source node indices
+    dest = np.array(dest_ns + dest_s, dtype=np.int)  # destination node indices
+    dev_within = np.concatenate((dev_ns, dev_s))  # corresp. deviation values
+
+    # lowest deviation for a given source node, used for off-map prob.
+
+    dev_off = np.asarray([dev_within[source == node].min() for node in range(N-1)])
+
+    return {"source": source, "dest": dest, "dev": (dev_within, dev_off)}
+
+
+def create_transition_matrix(deviation_data, N, Eoo, theta1, theta2, theta3):
+    """
+    Creates transition matrix conditioned on odom.
+    Args:
+        mapG: networkx MultiDiGraph containing map transitions
+        odom: R^6 odometry to set transition probabilities
+        Eoo: Prob. of off-map to off-map transition
+        w: attitude weight
+        TODO: params
+    """
+
+    dev_within, dev_off = deviation_data["dev"]
+    source_indices = deviation_data["source"]
+    dest_indices = deviation_data["dest"]
+
+    # probability of leaving the map from any within map node
+    # (last column, excluding bottom right element)
+
+    source_onoff = np.arange(N)
+    dest_onoff = np.ones(N, dtype=np.int) * (N - 1)
+    p_onoff = np.empty(N)
+    p_onoff[:-1] = logistic(dev_off, theta1, theta2)
+    p_onoff[-1] = 0.
+
+    # probability of transition to other within map states given in the map
+    # ((N-1) x (N-1) top left sub-block)
+
+    E_topleft = coo_matrix((np.exp(-theta3 * dev_within),
+                           (source_indices, dest_indices)), shape=(N, N))
+    E_topleft = normalize(E_topleft, norm='l1', axis=1)
+    E_topleft = E_topleft.multiply(1. - p_onoff[:, None]).tocsc()
+
+    # probability of returning to map from off-map (last row)
+
+    source_fromoff = np.ones(N, dtype=np.int) * (N - 1)
+    dest_fromoff = np.arange(N)
+    p_fromoff = np.ones(N) * (1. - Eoo) / (N - 1)
+    p_fromoff[-1] = Eoo
+
+    # construct transition matrix outside of top left sub-block
+
+    source_other = np.concatenate((source_onoff, source_fromoff))
+    dest_other = np.concatenate((dest_onoff, dest_fromoff))
+    p_other = np.concatenate((p_onoff, p_fromoff))
+    E_other = csc_matrix((p_other, (source_other, dest_other)), shape=(N, N))
+
+    E = E_topleft + E_other
+
+    return E
+
+
+def motion_off_map_prob(transition_matrix, belief):
+    """
+    Compute prior probability of leaving map from motion only
+    Args:
+        transition_matrix: State transition matrix conditioned on odometry
+        belief: posterior belief from previous time period
+    """
+    return transition_matrix[:, -1] @ belief

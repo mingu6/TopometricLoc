@@ -17,12 +17,13 @@ from settings import DATA_DIR
 import geometry
 
 
-def load_subsampled_data(traverse, fname, pca_dim):
+def load_subsampled_data(traverse, fname, pca_dim, ind=None):
     df = pd.read_csv(path.join(DATA_DIR, traverse, 'subsampled', fname))
-    tstamps = df['timestamp'].to_numpy()
+    ind_end = len(df) if ind is None else ind
+    tstamps = df['timestamp'][:ind_end].to_numpy()
     xyzrpy = df[['northing', 'easting', 'down', 'roll', 'pitch', 'yaw']].to_numpy()
-    poses = geometry.SE3.from_xyzrpy(xyzrpy)
-    descriptors = read_descriptors(traverse, tstamps)[:, :pca_dim]
+    poses = geometry.SE3.from_xyzrpy(xyzrpy[:ind_end])
+    descriptors = read_descriptors(traverse, tstamps)[:ind_end, :pca_dim]
     return tstamps, poses, descriptors
 
 
@@ -64,7 +65,8 @@ def build_map(traverse, tstamps, poses, descriptors, w, max_dist):
 
     # create transition edges (window)
 
-    allpairs = all_pairs_dijkstra(mapG, cutoff=max_dist, weight='d')
+    #allpairs = all_pairs_dijkstra(mapG, cutoff=max_dist, weight='d')
+    allpairs = all_pairs_dijkstra(mapG, cutoff=3)
 
     for source, (_, paths) in tqdm(allpairs, desc="transition edges", total=N):
         for dest in paths.keys():
@@ -73,14 +75,15 @@ def build_map(traverse, tstamps, poses, descriptors, w, max_dist):
                 # between two midpoints: one between node and predecessor and
                 # one between node and successor node.
                 if source == 0:
-                    relpose = mapG[0][1]["nh"]["rpose"]
+                    start = - mapG[0][1]["nh"]["rpose"] * 0.5
+                    end = mapG[0][1]["nh"]["rpose"] * 0.5
                 elif source == N-1:
-                    relpose = mapG[N-2][N-1]["nh"]["rpose"]
+                    start = -0.5 * mapG[N-2][N-1]["nh"]["rpose"]
+                    end = 0.5 * mapG[N-2][N-1]["nh"]["rpose"]
                 else:
                     start = 0.5 * (poses[source] / poses[source-1]).to_xyzrpy()
                     end = 0.5 * (poses[source] / poses[source+1]).to_xyzrpy()
-                    relpose = end - start
-                mapG.add_edge(source, dest, "self", interval=relpose)
+                mapG.add_edge(source, dest, "self", tO1=start, tO2=end)
             else:
                 # regular transition case: draw line segment around origin node
                 # and another around the destination node. odometry is then
@@ -95,7 +98,7 @@ def build_map(traverse, tstamps, poses, descriptors, w, max_dist):
                     tD2 = 0.5 * ((poses[source] / poses[dest]).to_xyzrpy() +
                                  (poses[source] / poses[dest+1]).to_xyzrpy())
                 else:
-                    # TO DO: VERFIY THIS< TRANSITION LARGE
+                    # TO DO: VERFIY THIS TRANSITION LARGE
                     tD2 = 1.5 * (poses[source] / poses[dest]).to_xyzrpy() - \
                             0.5 * (poses[source] / poses[dest-1]).to_xyzrpy()
                 tOD = (poses[source] / poses[dest]).to_xyzrpy()

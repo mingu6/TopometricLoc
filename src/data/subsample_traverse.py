@@ -43,7 +43,7 @@ if __name__ == "__main__":
             "Names of reference traverses to process,"
             "e.g. overcast, rain, dusk  etc. Input 'all'"
             "instead to process all available references traverses."))
-    parser.add_argument("-w", "--attitude-weight", type=float, default=10,
+    parser.add_argument("-w", "--attitude-weight", type=float, default=5,
         help=("weight for attitude component of pose"
               "distance equal to d where 1 / d being rotation"
               "angle (rad) equivalent to 1m translation"))
