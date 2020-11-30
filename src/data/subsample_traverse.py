@@ -5,6 +5,7 @@ import numpy as np
 from tqdm import tqdm
 
 import pandas as pd
+import matplotlib.pyplot as plt
 
 from settings import DATA_DIR, xyz_centre
 import geometry
@@ -98,6 +99,15 @@ if __name__ == "__main__":
         tstamps_sub, xyzrpy_sub, vo_sub = spatial_subsample(
             tstamps, poses, vo_ts, vo, thres, w)
 
+        acc_pose = geometry.SE3.from_xyzrpy(xyzrpy_sub[0])
+        poses_vo = [acc_pose.to_xyzrpy()]
+        for v in vo:
+            acc_pose *= v
+            poses_vo.append(acc_pose.to_xyzrpy())
+        poses_vo = np.asarray(poses_vo)
+        plt.scatter(xyzrpy_sub[:, 1], xyzrpy_sub[:, 0], color='green')
+        plt.scatter(poses_vo[:, 1], poses_vo[:, 0], color='red')
+        plt.show()
         # save timestamps of subsampled traverse to disk
 
         save_path = path.join(traverse_path, "subsampled")
