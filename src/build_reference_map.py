@@ -22,9 +22,10 @@ def load_subsampled_data(traverse, fname, pca_dim, ind=None):
     ind_end = len(df) if ind is None else ind
     tstamps = df['timestamp'][:ind_end].to_numpy()
     xyzrpy = df[['northing', 'easting', 'down', 'roll', 'pitch', 'yaw']].to_numpy()
+    vo = df[['vo_x', 'vo_y', 'vo_z', 'vo_roll', 'vo_pitch', 'vo_yaw']].to_numpy()
     poses = geometry.SE3.from_xyzrpy(xyzrpy[:ind_end])
     descriptors = read_descriptors(traverse, tstamps)[:ind_end, :pca_dim]
-    return tstamps, poses, descriptors
+    return tstamps, poses, descriptors, vo
 
 
 def read_descriptors(traverse, tstamps):
@@ -132,9 +133,9 @@ if __name__ == "__main__":
     fname = args.filename
 
     # read reference map node data
-    tstamps, poses, descriptors = load_subsampled_data(traverse, fname, args.pca_dim)
+    tstamps, poses, descriptors, vo = load_subsampled_data(traverse, fname, args.pca_dim)
 
-    ref_map = build_map(traverse, tstamps, poses, descriptors, w, d)
+    ref_map = build_map(traverse, tstamps, poses, descriptors, vo, w, d)
 
     # save map
     map_dir = path.join(DATA_DIR, traverse, 'saved_maps')
