@@ -22,9 +22,10 @@ def load_subsampled_data(traverse, fname, pca_dim, ind=None):
     ind_end = len(df) if ind is None else ind
     tstamps = df['timestamp'][:ind_end].to_numpy()
     xyzrpy = df[['northing', 'easting', 'down', 'roll', 'pitch', 'yaw']].to_numpy()
+    vo = df[['vo_x', 'vo_y', 'vo_z', 'vo_roll', 'vo_pitch', 'vo_yaw']].to_numpy()
     poses = geometry.SE3.from_xyzrpy(xyzrpy[:ind_end])
     descriptors = read_descriptors(traverse, tstamps)[:ind_end, :pca_dim]
-    return tstamps, poses, descriptors
+    return tstamps, poses, vo, descriptors
 
 
 def read_descriptors(traverse, tstamps):
@@ -33,14 +34,22 @@ def read_descriptors(traverse, tstamps):
     return np.concatenate(descriptors, axis=0)
 
 
-def build_map(traverse, tstamps, poses, descriptors, w, max_dist):
+def build_map(traverse, tstamps, poses, vo, descriptors, w, max_dist):
     mapG = nx.MultiDiGraph()
     N = len(tstamps)
+
+    # preprocess odom
+    vo_se3 = geometry.SE3.from_xyzrpy(vo)
+    cum_odom = [vo_se3[0]]
+    for i in range(1, len(vo_se3)):
+        cum_odom.append(cum_odom[-1] * vo_se3[i])
+    cum_odom = geometry.combine(cum_odom)
 
     # add nodes
 
     node_inds = np.arange(N)
-    nodes = [(ind, {"nv": descriptors[ind]}) for ind in node_inds]
+    nodes = [(ind, {"nv": descriptors[ind], "gt": poses[ind].to_xyzrpy()})
+             for ind in node_inds]
     mapG.add_nodes_from(nodes)
 
     # add neighbor edges b/w subsequent frames (loop closures in future)
@@ -53,7 +62,7 @@ def build_map(traverse, tstamps, poses, descriptors, w, max_dist):
         # identify nearby nodes and extract relative poses
 
         nhood = np.arange(ind, min(ind+2, N))
-        rel_xyzrpy = np.atleast_2d((poses[ind] / poses[nhood]).to_xyzrpy())
+        rel_xyzrpy = np.atleast_2d((cum_odom[ind] / cum_odom[nhood]).to_xyzrpy())
         drel = np.linalg.norm(rel_xyzrpy * att_wt, axis=1)
 
         # insert self-edges and immediate neighbor edges (nhood map)
@@ -66,7 +75,7 @@ def build_map(traverse, tstamps, poses, descriptors, w, max_dist):
     # create transition edges (window)
 
     #allpairs = all_pairs_dijkstra(mapG, cutoff=max_dist, weight='d')
-    allpairs = all_pairs_dijkstra(mapG, cutoff=3)
+    allpairs = all_pairs_dijkstra(mapG, cutoff=2)
 
     for source, (_, paths) in tqdm(allpairs, desc="transition edges", total=N):
         for dest in paths.keys():
@@ -81,27 +90,29 @@ def build_map(traverse, tstamps, poses, descriptors, w, max_dist):
                     start = -0.5 * mapG[N-2][N-1]["nh"]["rpose"]
                     end = 0.5 * mapG[N-2][N-1]["nh"]["rpose"]
                 else:
-                    start = 0.5 * (poses[source] / poses[source-1]).to_xyzrpy()
-                    end = 0.5 * (poses[source] / poses[source+1]).to_xyzrpy()
+                    start = 0.5 * geometry.SE3.from_xyzrpy(
+                        vo[source-1]).inv().to_xyzrpy()
+                    end = 0.5 * vo[source]
                 mapG.add_edge(source, dest, "self", tO1=start, tO2=end)
             else:
                 # regular transition case: draw line segment around origin node
                 # and another around the destination node. odometry is then
                 # compared to lines between all points on these line segments
-                tO1 = 0.5 * (poses[source] / poses[source-1]).to_xyzrpy() if \
-                        source > 0 else -0.5 * mapG[0][1]["nh"]["rpose"]
-                tO2 = 0.5 * (poses[source] / poses[source+1]).to_xyzrpy()
+                source_bw = geometry.SE3.from_xyzrpy(vo[source-1]).inv().to_xyzrpy()
+                tO1 = 0.5 * source_bw if source > 0 else -0.5 * mapG[0][1]["nh"]["rpose"]
+                tO1 = 0.5 * source_bw if source > 0 else -0.5 * mapG[0][1]["nh"]["rpose"]
+                tO2 = 0.5 * vo[source]
 
-                tD1 = 0.5 * ((poses[source] / poses[dest]).to_xyzrpy() +
-                             (poses[source] / poses[dest-1]).to_xyzrpy())
+                tD1 = 0.5 * ((cum_odom[source] / cum_odom[dest]).to_xyzrpy() +
+                             (cum_odom[source] / cum_odom[dest-1]).to_xyzrpy())
                 if dest < N-1:
-                    tD2 = 0.5 * ((poses[source] / poses[dest]).to_xyzrpy() +
-                                 (poses[source] / poses[dest+1]).to_xyzrpy())
+                    tD2 = 0.5 * ((cum_odom[source] / cum_odom[dest]).to_xyzrpy() +
+                                 (cum_odom[source] / cum_odom[dest+1]).to_xyzrpy())
                 else:
                     # TO DO: VERFIY THIS TRANSITION LARGE
-                    tD2 = 1.5 * (poses[source] / poses[dest]).to_xyzrpy() - \
-                            0.5 * (poses[source] / poses[dest-1]).to_xyzrpy()
-                tOD = (poses[source] / poses[dest]).to_xyzrpy()
+                    tD2 = 1.5 * (cum_odom[source] / cum_odom[dest]).to_xyzrpy() - \
+                            0.5 * (cum_odom[source] / cum_odom[dest-1]).to_xyzrpy()
+                tOD = (cum_odom[source] / cum_odom[dest]).to_xyzrpy()
 
                 mapG.add_edge(source, dest, "nonself",
                               tO1=tO1, tO2=tO2, tD1=tD1, tD2=tD2,
@@ -132,9 +143,9 @@ if __name__ == "__main__":
     fname = args.filename
 
     # read reference map node data
-    tstamps, poses, descriptors = load_subsampled_data(traverse, fname, args.pca_dim)
+    tstamps, poses, vo, descriptors = load_subsampled_data(traverse, fname, args.pca_dim)
 
-    ref_map = build_map(traverse, tstamps, poses, descriptors, w, d)
+    ref_map = build_map(traverse, tstamps, poses, vo, descriptors, w, d)
 
     # save map
     map_dir = path.join(DATA_DIR, traverse, 'saved_maps')
