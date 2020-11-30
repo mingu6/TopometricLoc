@@ -106,9 +106,9 @@ if __name__ == "__main__":
 
     # loop through sequence and update belief
     start_ind = 1675  # 550-580 hard
-    #start_ind = 0
+    start_ind = 0
     end_ind = len(descriptorsQ)
-    end_ind = 1690
+    end_ind = 2000
 
     # f/w b/w algorithm variables
     T = end_ind - start_ind
@@ -134,13 +134,13 @@ if __name__ == "__main__":
 
     # process measurements
     sims = query_nv @ descriptors[:, :args.pca_dim].T
-    deviations = [create_deviation_matrix(ref_map, o, Eoo, w) for
-                  o in tqdm(odom, desc='odom deviations')]
+    #deviations = [create_deviation_matrix(ref_map, o, Eoo, w) for
+    #              o in tqdm(odom, desc='odom deviations')]
 
-    # import matplotlib.pyplot as plt
-    # best_inds = np.argpartition(-sims, 50)[:, :50]
-    # successes = np.asarray([np.any(geometry.metric(pq, poses[inds], 5.) < 10.) for pq, inds in zip(posesQ, best_inds)])
-    # print("successes", successes.sum() / len(successes))
+    import matplotlib.pyplot as plt
+    best_inds = np.argpartition(-sims, 20)[:, :20]
+    successes = np.asarray([np.any(geometry.metric(pq, poses[inds], 5.) < 10.) for pq, inds in zip(posesQ, best_inds)])
+    print("successes", successes.sum() / len(successes))
 
     # plt.scatter(xyzrpyQ[:, 1], xyzrpyQ[:, 0], c=successes[:])
     # plt.colorbar()

@@ -140,3 +140,4 @@ cython_debug/
 # Ming
 *.ipynb
 *.DS_Store
+src/feature_extraction/models/*

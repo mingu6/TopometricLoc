@@ -28,9 +28,9 @@ def load_subsampled_data(traverse, fname, pca_dim, ind=None):
 
 
 def read_descriptors(traverse, tstamps):
-    dirpath = path.join(DATA_DIR, traverse, 'descriptors/hf-net/glb')
+    dirpath = path.join(DATA_DIR, traverse, 'features/global')
     descriptors = [np.load(path.join(dirpath, f'{ts}.npy')) for ts in tstamps]
-    return np.asarray(descriptors)
+    return np.concatenate(descriptors, axis=0)
 
 
 def build_map(traverse, tstamps, poses, descriptors, w, max_dist):

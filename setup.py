@@ -9,7 +9,9 @@ setup(
         'pandas',
         'tqdm',
         'matplotlib',
-        'ipykernel'
+        'ipykernel',
+        'networkx',
+        'scikit-learn'
     ],
     package_dir = {'': 'src/'}
 )

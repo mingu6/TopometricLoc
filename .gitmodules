@@ -1,0 +1,6 @@
+[submodule "src/deep_features"]
+	path = src/deep_features
+	url = https://github.com/cedrusx/deep_features.git
+[submodule "src/openvino"]
+	path = src/openvino
+	url = https://github.com/openvinotoolkit/openvino.git
