@@ -142,33 +142,36 @@ if __name__ == "__main__":
     sims = descriptorsQ[:, :pca_dim] @ descriptors[:, :pca_dim].T
 
     sims_viterbi = sims[start_ind:end_ind]
-    # deviations_viterbi = [create_deviation_matrix(ref_map, o, Eoo, w) for
-                  # o in tqdm(odom, desc='odom deviations')]
+    deviations_viterbi = [create_deviation_matrix(ref_map, o, Eoo, w) for
+                  o in tqdm(odom, desc='odom deviations')]
 
     # initialize prior belief (uniform)
     prior = np.ones(N) * (1. - p_off_prior) / (N - 1)
     prior[-1] = p_off_prior
 
-    # # batch localization (entire sequence)
+    # batch localization (entire sequence)
 
-    # nv_lhoods_viterbi = vmflhood(sims_viterbi, kappa)
-    # transition_matrices_viterbi = [create_transition_matrix(deviations_viterbi[t], N, Eoo,
-                                                    # theta[t, 0], theta[t, 1],
-                                                    # theta[t, 2])
-                           # for t in range(T-1)]
-    # alpha, off_lhoods, on_lhoods = forward_algorithm(
-        # nv_lhoods_viterbi, transition_matrices_viterbi,
-        # prior_off_classif, off_map_probs, prior
-    # )
-    # lhoods = np.concatenate((nv_lhoods_viterbi, off_lhoods[:, None]), axis=1)
-    # state_seq = viterbi(lhoods, transition_matrices_viterbi, prior)
-    # plot_viterbi(state_seq, poses, posesQ[start_ind:end_ind], sims_viterbi[start_ind:end_ind])
+    nv_lhoods_viterbi = vmflhood(sims_viterbi, kappa)
+    transition_matrices_viterbi = [create_transition_matrix(deviations_viterbi[t], N, Eoo,
+                                                    theta[t, 0], theta[t, 1],
+                                                    theta[t, 2])
+                           for t in range(T-1)]
+    alpha, off_lhoods, on_lhoods = forward_algorithm(
+        nv_lhoods_viterbi, transition_matrices_viterbi,
+        prior_off_classif, off_map_probs, prior
+    )
+    lhoods = np.concatenate((nv_lhoods_viterbi, off_lhoods[:, None]), axis=1)
+    state_seq = viterbi(lhoods, transition_matrices_viterbi, prior)
+    plot_viterbi(state_seq, poses, posesQ[start_ind:end_ind], sims_viterbi[start_ind:end_ind])
 
     # online filtering localizaton
 
     nv_lhoods = vmflhood(sims[start_ind:], kappa)
-    t, ind = online_localization(odom[start_ind:], nv_lhoods,
+    t, ind, posterior = online_localization(odomQ[start_ind:], nv_lhoods,
                                  prior_off_classif, off_map_probs, prior,
                                  ref_map, Eoo, theta[0, 0], theta[0, 1], theta[0, 2],
                                  w)
+    plt.scatter(xyzrpy[:, 1], xyzrpy[:, 0], c=posterior[:-1])
+    plt.colorbar()
+    plt.show()
     print(t, ind)
