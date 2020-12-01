@@ -15,11 +15,25 @@ from networkx.algorithms.shortest_paths.generic import shortest_path
 from networkx.algorithms.shortest_paths.weighted import all_pairs_dijkstra
 
 from build_reference_map import read_descriptors, build_map, load_subsampled_data
-from hmm_inference import forward_backward, Mstep, compute_objective, compute_objective_parts, highlevel_viterbi, forward_algorithm
+from hmm_inference import forward_backward, Mstep, compute_objective, compute_objective_parts, highlevel_viterbi, forward_algorithm, viterbi
 from measurement_model import vmflhood
 from motion_model import create_transition_matrix, create_deviation_matrix
 from settings import DATA_DIR
 import geometry
+
+
+def plot_viterbi(pred, gt, poses, posesQ):
+    T = len(pred)
+    xyzrpy = poses.to_xyzrpy()
+    xyzrpyQ = posesQ.to_xyzrpy()
+    plt.scatter(xyzrpy[:, 1], xyzrpy[:, 0], color='black', s=5)
+    plt.scatter(xyzrpyQ[:, 1], xyzrpyQ[:, 0], color='red', s=5)
+    for t in range(T):
+        px = np.vstack((xyzrpyQ[t, 1], xyzrpy[gt[t], 1]))
+        py = np.vstack((xyzrpyQ[t, 0], xyzrpy[gt[t], 0]))
+        plt.plot(px, py, 'r-')
+    plt.show()
+    return None
 
 
 if __name__ == "__main__":
@@ -55,7 +69,7 @@ if __name__ == "__main__":
     # load/build reference map
     map_dir = path.join(DATA_DIR, ref_traverse, 'saved_maps')
     fpath = path.join(map_dir, f'{ref_fname[:-4]}_wd_{w:.0f}.pickle')
-    tstamps, poses, descriptors = \
+    tstamps, poses, vo, descriptors = \
         load_subsampled_data(ref_traverse, ref_fname, pca_dim)
     xyzrpy = poses.to_xyzrpy()
 
@@ -64,8 +78,8 @@ if __name__ == "__main__":
             ref_map = pickle.load(f)
     except FileNotFoundError as err:
         print("cached map file not found, building map...")
-        tstamps, poses, _ = load_subsampled_data(ref_traverse, ref_fname, pca_dim)
-        ref_map = build_map(ref_traverse, tstamps, poses, descriptors,
+        tstamps, poses, vo, _ = load_subsampled_data(ref_traverse, ref_fname, pca_dim)
+        ref_map = build_map(ref_traverse, tstamps, poses, vo, descriptors,
                             w, 2 * args.subsample_threshold)
         with open(fpath, "rb") as f:
             pickle.dump(ref_map, f)
@@ -81,10 +95,11 @@ if __name__ == "__main__":
             descriptors[i] = data['nv']
 
     # load query sequence
-    tstampsQ, posesQ, descriptorsQ = \
+    tstampsQ, posesQ, voQ, descriptorsQ = \
         load_subsampled_data(query_traverse, q_fname, pca_dim)
     xyzrpyQ = posesQ.to_xyzrpy()
-    odomQ = (posesQ[:-1] / posesQ[1:]).to_xyzrpy()
+    #odomQ = (posesQ[:-1] / posesQ[1:]).to_xyzrpy()
+    odomQ = voQ
 
     # generate off-map probabilities
     off_map_probs = np.random.normal(0.2, 0.0, size=len(descriptorsQ))
@@ -105,49 +120,54 @@ if __name__ == "__main__":
     # fig.canvas.draw()
 
     # loop through sequence and update belief
-    start_ind = 1675  # 550-580 hard
-    start_ind = 0
+    start_ind = 1675  # 550-580 hard 50-80 aliased
+    start_ind = 100
     end_ind = len(descriptorsQ)
-    end_ind = 2000
+    end_ind = 130
+    start_ind = 2400
+    end_ind = 2440
 
     # f/w b/w algorithm variables
     T = end_ind - start_ind
     odom = odomQ[start_ind:end_ind-1]
-    print(odom)
+    #print(odom[:, [0, 5]])
     #odom[10:20, :3] += np.random.normal(-0, 0.3, size=(10, 3))
     query_nv = descriptorsQ[start_ind:end_ind]
     #query_nv[20:30] += np.random.normal(0, 0.3, size=(10, 1024))
 
+    pQ = posesQ[start_ind:end_ind]
+    gt = np.asarray([np.argmin(geometry.metric(Q, poses, w)) for Q in pQ])
+
     # params
-    Eoo = 0.2
+    Eoo = 0.7
     theta = np.ones((T - 1, 3))
     theta[:, 0] *= 1.5
     theta[:, 1] *= 2.0
-    theta[:, 2] *= 0.3
+    theta[:, 2] *= 2.0
     # theta[:, 0] *= 0.0
     # theta[:, 1] *= 0.0
-    # theta[:, 2] *= 0.0
+    # theta[:, 2] *= 100.0
     lambda1 = 0.05
-    kappa = np.ones(T) * 1.0
+    kappa = np.ones(T) * 2.0
     p_off_prior = 0.2
     prior_off_classif = 0.2
 
     # process measurements
     sims = query_nv @ descriptors[:, :args.pca_dim].T
-    #deviations = [create_deviation_matrix(ref_map, o, Eoo, w) for
-    #              o in tqdm(odom, desc='odom deviations')]
+    deviations = [create_deviation_matrix(ref_map, o, Eoo, w) for
+                  o in tqdm(odom, desc='odom deviations')]
 
-    import matplotlib.pyplot as plt
-    best_inds = np.argpartition(-sims, 20)[:, :20]
-    successes = np.asarray([np.any(geometry.metric(pq, poses[inds], 5.) < 10.) for pq, inds in zip(posesQ, best_inds)])
-    print("successes", successes.sum() / len(successes))
+    # import matplotlib.pyplot as plt
+    # best_inds = np.argpartition(-sims, 20)[:, :20]
+    # successes = np.asarray([np.any(geometry.metric(pq, poses[inds], 5.) < 10.) for pq, inds in zip(posesQ, best_inds)])
+    # print("successes", successes.sum() / len(successes))
 
     # plt.scatter(xyzrpyQ[:, 1], xyzrpyQ[:, 0], c=successes[:])
     # plt.colorbar()
     # plt.show()
 
-    import matplotlib.pyplot as plt
-    plt.hist(deviations[0]["dev"][1], bins=100); plt.show()
+    # import matplotlib.pyplot as plt
+    # plt.hist(deviations[0]["dev"][1], bins=100); plt.show()
 
     # initialize prior
     prior = np.ones(N) * (1. - p_off_prior) / (N - 1)
@@ -158,8 +178,17 @@ if __name__ == "__main__":
                                                     theta[t, 0], theta[t, 1],
                                                     theta[t, 2])
                            for t in range(T-1)]
-    alpha, off_lhoods, on_lhoods = forward_algorithm(nv_lhoods, transition_matrices, prior_off_classif, off_map_probs, prior)
-    state_seq = highlevel_viterbi(on_lhoods, off_lhoods, transition_matrices, prior)
+    alpha, off_lhoods, on_lhoods = forward_algorithm(
+        nv_lhoods, transition_matrices, prior_off_classif, off_map_probs, prior)
+    lhoods = np.concatenate((nv_lhoods, off_lhoods[:, None]), axis=1)
+    state_seq = viterbi(lhoods, transition_matrices, prior)
+    print("pred:", state_seq)
+    print("true:", gt)
+    print("IR  :", np.argmax(sims, axis=1))
+    plot_viterbi(state_seq, gt, poses, pQ)
+    import pdb; pdb.set_trace()
+    state_seq = highlevel_viterbi(
+        on_lhoods, off_lhoods, transition_matrices, prior)
 
     niter = 20
     for i in range(niter):

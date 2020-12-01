@@ -4,11 +4,15 @@ from motion_model import motion_off_map_prob
 
 
 def vmflhood(query_similarities, kappas):
-    k = 20
+    k = 10
+    w = np.array([0.6, 0.7 ,0.8, 0.9, 1.0, 0.9, 0.8, 0.7, 0.6])
     ind_max = np.argpartition(-query_similarities, k, axis=1)
-    lhoods = np.ones_like(query_similarities)
-    lhoods[np.arange(lhoods.shape[0])[:, None], ind_max[:, :k]] = 2.0
-    lhoods = np.exp(kappas[:, None] * query_similarities)
+    lhoods = np.zeros_like(query_similarities)
+    lhoods[np.arange(lhoods.shape[0])[:, None], ind_max[:, :k]] = 0.5
+    for i in range(len(lhoods)):
+        lhoods[i] = np.convolve(lhoods[i], w, mode='same')
+        lhoods[i] += 1.
+    #lhoods = np.exp(kappas[:, None] * query_similarities)
     return lhoods
 
 

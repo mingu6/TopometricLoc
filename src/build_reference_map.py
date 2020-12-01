@@ -40,9 +40,9 @@ def build_map(traverse, tstamps, poses, vo, descriptors, w, max_dist):
 
     # preprocess odom
     vo_se3 = geometry.SE3.from_xyzrpy(vo)
-    cum_odom = [vo_se3[0]]
-    for i in range(1, len(vo_se3)):
-        cum_odom.append(cum_odom[-1] * vo_se3[i])
+    cum_odom = [geometry.SE3.from_xyzrpy(np.zeros(6))]
+    for i in range(1, len(vo_se3)+1):
+        cum_odom.append(cum_odom[-1] * vo_se3[i-1])
     cum_odom = geometry.combine(cum_odom)
 
     # add nodes
@@ -75,7 +75,7 @@ def build_map(traverse, tstamps, poses, vo, descriptors, w, max_dist):
     # create transition edges (window)
 
     #allpairs = all_pairs_dijkstra(mapG, cutoff=max_dist, weight='d')
-    allpairs = all_pairs_dijkstra(mapG, cutoff=2)
+    allpairs = all_pairs_dijkstra(mapG, cutoff=3)
 
     for source, (_, paths) in tqdm(allpairs, desc="transition edges", total=N):
         for dest in paths.keys():
