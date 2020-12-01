@@ -6,7 +6,7 @@ from scipy.optimize import minimize, Bounds
 from scipy.sparse import csc_matrix
 from sklearn.preprocessing import normalize
 
-from motion_model import shortest_dist_segments, create_transition_matrix
+from motion_model import shortest_dist_segments, create_transition_matrix, create_deviation_matrix
 from measurement_model import vmflhood, measurement_update
 
 
@@ -195,7 +195,7 @@ def compute_objective(params, sims, deviations, off_map_probs, prior,
 def viterbi(obs_lhoods, transition_matrices, prior):
     T = obs_lhoods.shape[0]
 
-    V = np.empty_like(obs_lhoods)
+    V = np.zeros_like(obs_lhoods)
     V[0, :] = prior * obs_lhoods[0]
     ptr = np.empty((T - 1, obs_lhoods.shape[1]), dtype=np.int)
 
@@ -209,16 +209,16 @@ def viterbi(obs_lhoods, transition_matrices, prior):
         else:
             update = transition_matrices[t-1].multiply(V[t-1][:, None])\
                         .multiply(obs_lhoods[t][:, None])
-            V[t, :] = update.max(axis=0).toarray()[0, :]
-            ptr[t-1] = np.array(update.argmax(axis=0))[0, :]
+            V[t, :] = update.tocsc()[:-2, :].max(axis=0).toarray()[0, :]
+            ptr[t-1] = np.array(update.tocsc()[:-2, :].argmax(axis=0))[0, :]
 
     # run backtracing for optimal path
 
-    opt_seq = np.array(T, dtype=np.int)
-    opt_seq[-1] = np.argmax(V[-1])
+    opt_seq = np.empty(T, dtype=np.int)
+    opt_seq[-1] = np.argmax(V[-1, :-2])
 
     for t in reversed(range(T-1)):
-        opt_seq[t] = ptr[opt_seq[t+1]]
+        opt_seq[t] = ptr[t, opt_seq[t+1]]
 
     return opt_seq
 
@@ -439,3 +439,64 @@ def Mstep(gamma, xi, prior, sims, deviation, theta, kappa, Eoo, lambda1):
     Eoo_new = Eoo_new_num / Eoo_new_denom
     #Eoo_new = Eoo
     return theta_new, kappa_new, Eoo_new
+
+
+def bayes_recursion(vpr_lhood, transition_matrix, off_map_prob, prior_belief,
+                      prior_off_classif, initial=False):
+    """
+    update posterior belief
+
+    NOTE: If initial=True, alpha_prev must be prior belief at time 0
+    """
+    # compute factor used to rescale inverse sensor (off-map) measurements
+
+    # compute prior belief after motion update
+    if not initial:
+        prediction = transition_matrix.T @ prior_belief
+    else:
+        prediction = prior_belief
+    # perform posterior update with new off-map classification
+    r1 = prior_off_classif / (1. - prior_off_classif)
+    r2 = (1. - off_map_prob) / off_map_prob
+    r3 = (1 - prior_belief[-1]) / prior_belief[-1]
+    updated_belief_off = 1. / (1. + r1 * r2 * r3)  # p(x_t = off | z_{1:t})
+    # compute scale factor for new forward lhood
+    scale_factor = prior_belief[:-1] @ vpr_lhood / (1. - updated_belief_off)
+
+    # compute recursion
+
+    lhood_off = updated_belief_off * scale_factor / prior_belief[-1]
+    lhoods = np.append(vpr_lhood, lhood_off)
+    posterior_belief = prediction * lhoods
+    posterior_belief /= posterior_belief.sum()
+
+    return posterior_belief
+
+
+def online_localization(odom, vpr_lhood, prior_off_classif, off_map_probs, prior,
+                        ref_map, Eoo, theta1, theta2, theta3, w):
+    win = 5
+    posterior = prior.copy()
+    for t in range(len(odom)):
+        # check convergence
+        ind_max = np.argmax(posterior[:-2])
+        wind = posterior[max(0, ind_max - win):min(len(posterior) - 2, ind_max + win)]
+        score = wind.sum()
+        print(t, ind_max, score)
+        if score > 0.95:
+            # import matplotlib.pyplot as plt
+            # plt.bar(np.arange(len(posterior)-1), posterior[:-1])
+            # plt.show()
+            return t, ind_max, posterior
+        # compute stuff for bayes recursion
+        dev = create_deviation_matrix(ref_map, odom[t], Eoo, w)
+        E = create_transition_matrix(dev, len(ref_map), Eoo, theta1, theta2, theta3)
+        # Bayes recursion
+        if t == 0:
+            posterior = bayes_recursion(vpr_lhood[t], E, off_map_probs[0],
+                                        posterior, prior_off_classif, initial=True)
+        else:
+            posterior = bayes_recursion(vpr_lhood[t], E, off_map_probs[0],
+                                        posterior, prior_off_classif, initial=True)
+    # localization failure (failed to localize before EOS)
+    return False
