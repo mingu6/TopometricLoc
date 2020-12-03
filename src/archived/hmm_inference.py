@@ -222,6 +222,7 @@ def viterbi(obs_lhoods, transition_matrices, prior):
 
     return opt_seq
 
+
 def highlevel_viterbi(on_map_lhoods, off_map_lhoods, transition_matrices, prior):
 
     # create aggregated transition matrices
@@ -473,30 +474,34 @@ def bayes_recursion(vpr_lhood, transition_matrix, off_map_prob, prior_belief,
     return posterior_belief
 
 
-def online_localization(odom, vpr_lhood, prior_off_classif, off_map_probs, prior,
-                        ref_map, Eoo, theta1, theta2, theta3, w):
+def online_localization(deviations, vpr_lhood, prior_off_classif, off_map_probs, prior,
+                        Eoo, theta1, theta2, theta3, xyzrpy):
     win = 5
     posterior = prior.copy()
-    for t in range(len(odom)):
+    for t in range(len(deviations)):
         # check convergence
         ind_max = np.argmax(posterior[:-2])
-        wind = posterior[max(0, ind_max - win):min(len(posterior) - 2, ind_max + win)]
-        score = wind.sum()
-        print(t, ind_max, score)
-        if score > 0.95:
+        wind = np.arange(max(0, ind_max - win), min(len(posterior) - 2, ind_max + win))
+        score = posterior[wind].sum()
+        #print(t, ind_max, score, posterior[-1])
+        if score > 0.1:
             # import matplotlib.pyplot as plt
             # plt.bar(np.arange(len(posterior)-1), posterior[:-1])
             # plt.show()
-            return t, ind_max, posterior
+            ind_final = int(np.average(wind, weights=posterior[wind]))
+            return t, ind_final, posterior
         # compute stuff for bayes recursion
-        dev = create_deviation_matrix(ref_map, odom[t], Eoo, w)
-        E = create_transition_matrix(dev, len(ref_map), Eoo, theta1, theta2, theta3)
+        E = create_transition_matrix(deviations[t], len(prior), Eoo, theta1, theta2, theta3)
         # Bayes recursion
         if t == 0:
             posterior = bayes_recursion(vpr_lhood[t], E, off_map_probs[0],
                                         posterior, prior_off_classif, initial=True)
         else:
             posterior = bayes_recursion(vpr_lhood[t], E, off_map_probs[0],
-                                        posterior, prior_off_classif, initial=True)
+                                        posterior, prior_off_classif, initial=False)
+        #plt.scatter(xyzrpy[:, 1], xyzrpy[:, 0], c=dev['dev'][1])
+        #plt.scatter(xyzrpy[:, 1], xyzrpy[:, 0], c=E[:-1, -1].toarray()[:, 0])
+        # plt.scatter(xyzrpy[:, 1], xyzrpy[:, 0], c=posterior[:-1])
+        # plt.pause(1)
     # localization failure (failed to localize before EOS)
-    return False
+    return False, False, False

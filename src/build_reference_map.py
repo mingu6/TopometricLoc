@@ -25,11 +25,7 @@ def load_subsampled_data(traverse, fname, pca_dim, ind=None):
     vo = df[['vo_x', 'vo_y', 'vo_z', 'vo_roll', 'vo_pitch', 'vo_yaw']].to_numpy()
     poses = geometry.SE3.from_xyzrpy(xyzrpy[:ind_end])
     descriptors = read_descriptors(traverse, tstamps)[:ind_end, :pca_dim]
-<<<<<<< HEAD
-    return tstamps, poses, descriptors, vo
-=======
     return tstamps, poses, vo, descriptors
->>>>>>> ca253494fb89d6c5fd4ec2bd985e89129de41dc1
 
 
 def read_descriptors(traverse, tstamps):
@@ -79,7 +75,7 @@ def build_map(traverse, tstamps, poses, vo, descriptors, w, max_dist):
     # create transition edges (window)
 
     #allpairs = all_pairs_dijkstra(mapG, cutoff=max_dist, weight='d')
-    allpairs = all_pairs_dijkstra(mapG, cutoff=3)
+    allpairs = all_pairs_dijkstra(mapG, cutoff=8)
 
     for source, (_, paths) in tqdm(allpairs, desc="transition edges", total=N):
         for dest in paths.keys():
@@ -88,15 +84,15 @@ def build_map(traverse, tstamps, poses, vo, descriptors, w, max_dist):
                 # between two midpoints: one between node and predecessor and
                 # one between node and successor node.
                 if source == 0:
-                    start = - mapG[0][1]["nh"]["rpose"] * 0.5
-                    end = mapG[0][1]["nh"]["rpose"] * 0.5
+                    start = - mapG[0][1]["nh"]["rpose"] * 0.5 * 0.5
+                    end = mapG[0][1]["nh"]["rpose"] * 0.5 * 0.5
                 elif source == N-1:
-                    start = -0.5 * mapG[N-2][N-1]["nh"]["rpose"]
-                    end = 0.5 * mapG[N-2][N-1]["nh"]["rpose"]
+                    start = -0.5 * mapG[N-2][N-1]["nh"]["rpose"] * 0.5
+                    end = 0.5 * mapG[N-2][N-1]["nh"]["rpose"] * 0.5
                 else:
                     start = 0.5 * geometry.SE3.from_xyzrpy(
-                        vo[source-1]).inv().to_xyzrpy()
-                    end = 0.5 * vo[source]
+                        vo[source-1]).inv().to_xyzrpy() * 0.5
+                    end = 0.5 * vo[source] * 0.5
                 mapG.add_edge(source, dest, "self", tO1=start, tO2=end)
             else:
                 # regular transition case: draw line segment around origin node
@@ -147,15 +143,9 @@ if __name__ == "__main__":
     fname = args.filename
 
     # read reference map node data
-<<<<<<< HEAD
-    tstamps, poses, descriptors, vo = load_subsampled_data(traverse, fname, args.pca_dim)
-
-    ref_map = build_map(traverse, tstamps, poses, descriptors, vo, w, d)
-=======
     tstamps, poses, vo, descriptors = load_subsampled_data(traverse, fname, args.pca_dim)
 
     ref_map = build_map(traverse, tstamps, poses, vo, descriptors, w, d)
->>>>>>> ca253494fb89d6c5fd4ec2bd985e89129de41dc1
 
     # save map
     map_dir = path.join(DATA_DIR, traverse, 'saved_maps')

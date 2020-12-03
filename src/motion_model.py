@@ -205,7 +205,7 @@ def create_transition_matrix(deviation_data, N, Eoo, theta1, theta2, theta3):
     source_onoff = np.arange(N)
     dest_onoff = np.ones(N, dtype=np.int) * (N - 1)
     p_onoff = np.empty(N)
-    dev_off[:] = 1.
+    #dev_off[:] = 1.
     p_onoff[:-1] = logistic(dev_off, theta1, theta2)
     p_onoff[-1] = 0.
 

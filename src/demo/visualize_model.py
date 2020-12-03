@@ -37,8 +37,8 @@ def plot_viterbi(pred, poses, posesQ, sims):
     ax[0].scatter(xyzrpyQ[:, 1], xyzrpyQ[:, 0], color='green', s=5)
     ax[0].axis('square')
     for t in range(T):
-        px = np.vstack((xyzrpyQ[t, 1], xyzrpy[gt[t], 1]))
-        py = np.vstack((xyzrpyQ[t, 0], xyzrpy[gt[t], 0]))
+        px = np.vstack((xyzrpyQ[t, 1], xyzrpy[pred[t], 1]))
+        py = np.vstack((xyzrpyQ[t, 0], xyzrpy[pred[t], 0]))
         ax[0].plot(px, py, 'g-')
     # plot best match based on single image retrieval only
 
@@ -56,6 +56,40 @@ def plot_viterbi(pred, poses, posesQ, sims):
     plt.show()
     return None
 
+
+def plot_online(pred, poses, posesQ, sims, posterior):
+    # extract gt allocation of query poses
+    gt = np.asarray([np.argmin(geometry.metric(Q, poses, w)) for Q in posesQ])
+    # setup plots
+    fig, ax = plt.subplots(1, 2)
+    # plot batch state estimate from viterbi
+    # true query pose (red) matched to best refn match
+    T = len(posesQ)
+    xyzrpy = poses.to_xyzrpy()
+    xyzrpyQ = posesQ.to_xyzrpy()
+    ax[0].set_title('Online localizer (Filtering)')
+    ax[0].scatter(xyzrpy[:, 1], xyzrpy[:, 0], c=posterior[:-1], s=5)
+    ax[0].scatter(xyzrpyQ[:, 1], xyzrpyQ[:, 0], color='green', s=5)
+    ax[0].axis('square')
+    # plot point of localization
+    px = np.vstack((xyzrpyQ[-1, 1], xyzrpy[pred, 1]))
+    py = np.vstack((xyzrpyQ[-1, 0], xyzrpy[pred, 0]))
+    ax[0].plot(px, py, 'g-')
+    # plot best match based on single image retrieval only
+
+    # extract image retrieval indices
+    IR_inds = np.argmax(sims, axis=1)
+    # setup figure
+    ax[1].set_title('Single image retrieval')
+    ax[1].scatter(xyzrpy[:, 1], xyzrpy[:, 0], color='black', s=5)
+    ax[1].scatter(xyzrpyQ[:, 1], xyzrpyQ[:, 0], color='red', s=5)
+    ax[1].axis('square')
+    for t in range(T):
+        px = np.vstack((xyzrpyQ[t, 1], xyzrpy[IR_inds[t], 1]))
+        py = np.vstack((xyzrpyQ[t, 0], xyzrpy[IR_inds[t], 0]))
+        ax[1].plot(px, py, 'r-')
+    plt.show()
+    return None
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -95,10 +129,10 @@ if __name__ == "__main__":
     # parameters
     Eoo = 0.7
     theta = np.ones((T - 1, 3))
-    theta[:, 0] *= 1.5
-    theta[:, 1] *= 2.0
-    theta[:, 2] *= 2.0
-    kappa = 2.0
+    theta[:, 0] *= 2.0
+    theta[:, 1] *= 0.8
+    theta[:, 2] *= 1.0
+    kappa = 5.0
     p_off_prior = 0.2
     prior_off_classif = 0.2
 
@@ -132,8 +166,9 @@ if __name__ == "__main__":
             descriptors[i] = data['nv']
 
     # load query sequence
+    indmax = 1500 if query_traverse == 'dusk' else None
     tstampsQ, posesQ, voQ, descriptorsQ = \
-        load_subsampled_data(query_traverse, q_fname, pca_dim)
+        load_subsampled_data(query_traverse, q_fname, pca_dim, ind=indmax)
     xyzrpyQ = posesQ.to_xyzrpy()
     odomQ = voQ
 
@@ -162,7 +197,7 @@ if __name__ == "__main__":
     )
     lhoods = np.concatenate((nv_lhoods_viterbi, off_lhoods[:, None]), axis=1)
     state_seq = viterbi(lhoods, transition_matrices_viterbi, prior)
-    plot_viterbi(state_seq, poses, posesQ[start_ind:end_ind], sims_viterbi[start_ind:end_ind])
+    plot_viterbi(state_seq, poses, posesQ[start_ind:end_ind], sims_viterbi)
 
     # online filtering localizaton
 
@@ -170,8 +205,6 @@ if __name__ == "__main__":
     t, ind, posterior = online_localization(odomQ[start_ind:], nv_lhoods,
                                  prior_off_classif, off_map_probs, prior,
                                  ref_map, Eoo, theta[0, 0], theta[0, 1], theta[0, 2],
-                                 w)
-    plt.scatter(xyzrpy[:, 1], xyzrpy[:, 0], c=posterior[:-1])
-    plt.colorbar()
-    plt.show()
+                                 w, xyzrpy)
+    plot_online(ind, poses, posesQ[start_ind:start_ind+t], sims[start_ind:start_ind+t], posterior)
     print(t, ind)
