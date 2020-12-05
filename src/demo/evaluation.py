@@ -17,13 +17,31 @@ from networkx.algorithms.shortest_paths.weighted import all_pairs_dijkstra
 
 from build_reference_map import read_descriptors, build_map, load_subsampled_data
 from hmm_inference import viterbi, forward_algorithm, online_localization
-from measurement_model import vmflhood
+from measurement_model import vmflhood, vpr_lhood
 from motion_model import create_transition_matrix, create_deviation_matrix
 from settings import DATA_DIR
 import geometry
 
 eval_lists = {}
 eval_lists["night"] = np.array([[3000, 200],  # corner odom fucked, sticky, aliased
+                                [0, 200],  # initial bend sticky, o/w good
+                                [6000, 200],  # slight detour, bend, lil sticky
+                                [4900, 200],  # around the two left turns bends
+                                [4800, 200],  # aliased as shit...
+                                [1500, 200],  # RHS sticky
+                                [2100, 200],  # chuck a u
+                                [400, 200]    # straight, aliased, sticky
+                               ])
+eval_lists["dusk"] = np.array([[3000, 200],  # corner odom fucked, sticky, aliased
+                                [0, 200],  # initial bend sticky, o/w good
+                                [6000, 200],  # slight detour, bend, lil sticky
+                                [4900, 200],  # around the two left turns bends
+                                [4800, 200],  # aliased as shit...
+                                [1500, 200],  # RHS sticky
+                                [2100, 200],  # chuck a u
+                                [400, 200]    # straight, aliased, sticky
+                               ])
+eval_lists["rain"] = np.array([[3000, 200],  # corner odom fucked, sticky, aliased
                                 [0, 200],  # initial bend sticky, o/w good
                                 [6000, 200],  # slight detour, bend, lil sticky
                                 [4900, 200],  # around the two left turns bends
@@ -109,8 +127,12 @@ def plot_viterbi(pred, start_ind, L, data, savedir):
     ax[3].set_xlim(xyzrpyQ[:, 1].min(), xyzrpyQ[:, 1].max())
     ax[3].set_ylim(xyzrpyQ[:, 0].min(), xyzrpyQ[:, 0].max())
     # save plot
-    fig.savefig(path.join(savedir, f'viterbi_matches_{start_ind}_{L}.png'))
-    plt.close(fig)
+    if start_ind == 420:
+        print(pred, gt)
+        plt.show()
+    else:
+        fig.savefig(path.join(savedir, f'viterbi_matches_{start_ind}_{L}.png'))
+        plt.close(fig)
     return None
 
 
@@ -282,7 +304,7 @@ if __name__ == "__main__":
                         help="number of dimensions for nv descriptor")
     parser.add_argument("-s", "--start", type=int, default=0, help="start index of query sequence")
     parser.add_argument("-L", "--length", type=int, default=30, help="query sequence length for viterbi")
-    parser.add_argument("-K", "--top-k", type=int, default=10, help="number of retrievals for obs lhood")
+    parser.add_argument("-K", "--top-k", type=int, default=20, help="number of retrievals for obs lhood")
     args = parser.parse_args()
 
     # configuration variables
@@ -296,6 +318,7 @@ if __name__ == "__main__":
     start_ind = args.start
     end_ind = start_ind + args.length
     T = args.length
+    k = args.top_k
 
     att_wt = np.ones(6)
     att_wt[3:] *= w
@@ -305,10 +328,12 @@ if __name__ == "__main__":
     theta = np.ones((T - 1, 3))
     theta[:, 0] *= 2.0
     theta[:, 1] *= 0.8
-    theta[:, 2] *= 1.0
+    theta[:, 2] *= 2.0
     kappa = 5.0
     p_off_prior = 0.2
     prior_off_classif = 0.2
+    lhmax = 0.5
+    alpha = 1.0
 
     off_map_prob = 0.2
 
@@ -358,7 +383,8 @@ if __name__ == "__main__":
     start = time.time()
     print("Computing observation likelihoods...")
     sims = descriptorsQ[:, :pca_dim] @ descriptors[:, :pca_dim].T
-    nv_lhoods = vmflhood(sims, kappa)
+    #nv_lhoods = vmflhood(sims, kappa)
+    nv_lhoods = vpr_lhood(sims, lhmax, alpha, k)
     print(f"Done! duration {time.time() - start:.1f}s")
 
     # deviations typically precomputed for whole query traverse, precompute

@@ -3,16 +3,97 @@ import numpy as np
 from motion_model import motion_off_map_prob
 
 
-def vmflhood(query_similarities, kappas):
-    k = 10
-    w = np.array([0.6, 0.7 ,0.8, 0.9, 1.0, 0.9, 0.8, 0.7, 0.6])
+def vpr_lhood(query_similarities, lhmax, alpha, k):
+    w = np.array([0.6, 0.8, 1.0, 0.8, 0.6])
     ind_max = np.argpartition(-query_similarities, k, axis=1)
+
+    alpha = 0.7
+    lhmax = 1.0
+    lvl = 0.2
+    k = 30
+
     lhoods = np.zeros_like(query_similarities)
-    lhoods[np.arange(lhoods.shape[0])[:, None], ind_max[:, :k]] = 0.2
+    qsims = query_similarities[np.arange(lhoods.shape[0])[:, None], ind_max[:, :k]]
+    qsims = (qsims - qsims.min(axis=1)[:, None]) / qsims.max(axis=1)[:, None]
+    qsims = (qsims ** alpha) * lhmax
+    qsims += lvl
+
+    lhoods[np.arange(lhoods.shape[0])[:, None], ind_max[:, :k]] = qsims
     for i in range(len(lhoods)):
         lhoods[i] = np.convolve(lhoods[i], w, mode='same')
         lhoods[i] += 1.
-    lhoods = np.exp(kappas * query_similarities)
+
+    lhoods = np.exp(5.0 * query_similarities)
+    return lhoods
+
+
+def vmflhood(query_similarities, kappas):
+    k = 100
+    w = np.array([0.6, 0.7, 0.8, 0.9, 1.0, 0.9, 0.8, 0.7, 0.6])
+    w = np.array([0.6, 0.8, 1.0, 0.8, 0.6])
+    ind_max = np.argpartition(-query_similarities, k, axis=1)
+    #ind_max = np.argsort(-query_similarities, axis=1)[:, :k]
+    #lhoods = np.zeros_like(query_similarities)
+    #lhoods[np.arange(lhoods.shape[0])[:, None], ind_max[:, :k]] = 0.2
+    #lhoods[np.arange(lhoods.shape[0])[:, None], ind_max[:, :k]] = np.linspace(0.3, 0.05, k)[None, :]
+    #lhoods[np.arange(lhoods.shape[0])[:, None], ind_max[:, :k]] = 1.0
+    #for i in range(len(lhoods)):
+        #lhoods[i] = np.convolve(lhoods[i], w, mode='same')
+        #lhoods[i] += 1.
+    #lhoods = np.exp(8.0 * query_similarities)
+    lhoods = np.zeros_like(query_similarities)
+    #qsims = np.exp(kappas * query_similarities[np.arange(lhoods.shape[0])[:, None], ind_max[:, :k]])
+    qsims = query_similarities[np.arange(lhoods.shape[0])[:, None], ind_max[:, :k]]
+    qsims -= qsims.min(axis=1)[:, None]
+    qsims /= qsims.max(axis=1)[:, None]
+    qsims = qsims ** 0.8
+    qsims *= 0.5
+
+    #qsims *= 0.5
+    #qdiff = qsims.max(axis=1) - qsims.min(axis=1)
+    #qsims = (qsims - qsims.min(axis=1)[:, None]) / qdiff[:, None]
+    #qsims *= 0.5
+    #qsims += 0.05
+    lhoods[np.arange(lhoods.shape[0])[:, None], ind_max[:, :k]] = qsims
+    for i in range(len(lhoods)):
+        lhoods[i] = np.convolve(lhoods[i], w, mode='same')
+        lhoods[i] += 1.
+
+    return lhoods
+
+
+def vmflhood(query_similarities, kappas):
+    k = 100
+    w = np.array([0.6, 0.7, 0.8, 0.9, 1.0, 0.9, 0.8, 0.7, 0.6])
+    w = np.array([0.6, 0.8, 1.0, 0.8, 0.6])
+    ind_max = np.argpartition(-query_similarities, k, axis=1)
+    #ind_max = np.argsort(-query_similarities, axis=1)[:, :k]
+    #lhoods = np.zeros_like(query_similarities)
+    #lhoods[np.arange(lhoods.shape[0])[:, None], ind_max[:, :k]] = 0.2
+    #lhoods[np.arange(lhoods.shape[0])[:, None], ind_max[:, :k]] = np.linspace(0.3, 0.05, k)[None, :]
+    #lhoods[np.arange(lhoods.shape[0])[:, None], ind_max[:, :k]] = 1.0
+    #for i in range(len(lhoods)):
+        #lhoods[i] = np.convolve(lhoods[i], w, mode='same')
+        #lhoods[i] += 1.
+    #lhoods = np.exp(8.0 * query_similarities)
+    lhoods = np.zeros_like(query_similarities)
+    #qsims = np.exp(kappas * query_similarities[np.arange(lhoods.shape[0])[:, None], ind_max[:, :k]])
+    qsims = query_similarities[np.arange(lhoods.shape[0])[:, None], ind_max[:, :k]]
+    qsims -= qsims.min(axis=1)[:, None]
+    qsims /= qsims.max(axis=1)[:, None]
+    qsims = qsims ** 0.8
+    qsims *= 0.5
+
+    #qsims *= 0.5
+    #qdiff = qsims.max(axis=1) - qsims.min(axis=1)
+    #qsims = (qsims - qsims.min(axis=1)[:, None]) / qdiff[:, None]
+    #qsims *= 0.5
+    #qsims += 0.05
+    lhoods[np.arange(lhoods.shape[0])[:, None], ind_max[:, :k]] = qsims
+    for i in range(len(lhoods)):
+        lhoods[i] = np.convolve(lhoods[i], w, mode='same')
+        lhoods[i] += 1.
+
     return lhoods
 
 

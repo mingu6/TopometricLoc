@@ -7,6 +7,23 @@ def logistic(x, theta1, theta2):
     return 1. / (1. + np.exp(- theta1 * (x - theta2)))
 
 
+def pw_prob(x):
+    p_min = 0.1
+    p_max = 0.6
+    x_min = 0.0
+    x_max = 1.0
+    p_min = 0.05
+    p_max = 0.4
+    x_min = 0.2
+    x_max = 0.8
+    off_prob = np.empty_like(x)
+    off_prob[x <= x_min] = p_min
+    lin_mask = np.logical_and(x >= x_min, x <= x_max)
+    off_prob[lin_mask] = p_min + (x[lin_mask] - x_min) * (p_max - p_min) / (x_max - x_min)
+    off_prob[x > x_max] = p_max
+    return off_prob
+
+
 def shortest_dist_segments(p0, u, p1, v):
     """
     Returns shortest distance between two line segments.
@@ -207,7 +224,9 @@ def create_transition_matrix(deviation_data, N, Eoo, theta1, theta2, theta3):
     p_onoff = np.empty(N)
     #dev_off[:] = 1.
     p_onoff[:-1] = logistic(dev_off, theta1, theta2)
+    p_onoff[:-1] = pw_prob(dev_off)
     p_onoff[-1] = 0.
+
 
     # probability of transition to other within map states given in the map
     # ((N-1) x (N-1) top left sub-block)

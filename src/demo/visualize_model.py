@@ -131,7 +131,7 @@ if __name__ == "__main__":
     theta = np.ones((T - 1, 3))
     theta[:, 0] *= 2.0
     theta[:, 1] *= 0.8
-    theta[:, 2] *= 1.0
+    theta[:, 2] *= 0.5
     kappa = 5.0
     p_off_prior = 0.2
     prior_off_classif = 0.2
