@@ -11,7 +11,8 @@ setup(
         'matplotlib',
         'ipykernel',
         'networkx',
-        'scikit-learn'
+        'scikit-learn',
+        'PyYAML'
     ],
     package_dir = {'': 'src/'}
 )

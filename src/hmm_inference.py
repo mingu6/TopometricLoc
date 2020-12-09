@@ -79,13 +79,13 @@ def viterbi(obs_lhoods, transition_matrices, prior):
         else:
             update = transition_matrices[t-1].multiply(V[t-1][:, None])\
                         .multiply(obs_lhoods[t][:, None])
-            V[t, :] = update.tocsc()[:-2, :].max(axis=0).toarray()[0, :]
-            ptr[t-1] = np.array(update.tocsc()[:-2, :].argmax(axis=0))[0, :]
+            V[t, :] = update.tocsc()[:-1, :].max(axis=0).toarray()[0, :]
+            ptr[t-1] = np.array(update.tocsc()[:-1, :].argmax(axis=0))[0, :]
 
     # run backtracing for optimal path
 
     opt_seq = np.empty(T, dtype=np.int)
-    opt_seq[-1] = np.argmax(V[-1, :-2])
+    opt_seq[-1] = np.argmax(V[-1, :-1])
 
     for t in reversed(range(T-1)):
         opt_seq[t] = ptr[t, opt_seq[t+1]]
@@ -126,13 +126,15 @@ def bayes_recursion(vpr_lhood, transition_matrix, off_map_prob, prior_belief,
 
 
 def online_localization(deviations, vpr_lhood, prior_off_classif, off_map_probs, prior,
-                        Eoo, theta1, theta2, theta3, xyzrpy):
+                        Eoo, theta, p_min, p_max, d_min, d_max, width, xyzrpy):
     win = 5
     posterior = prior.copy()
+    params = {"Eoo": Eoo, "theta": theta, "N": len(prior), "p_min": p_min,
+              "p_max": p_max, "d_min": d_min, "d_max": d_max, "width": width}
     for t in range(len(deviations)):
         # check convergence
-        ind_max = np.argmax(posterior[:-2])
-        wind = np.arange(max(0, ind_max - win), min(len(posterior) - 2, ind_max + win))
+        ind_max = np.argmax(posterior[:-1])
+        wind = np.arange(max(0, ind_max - win), min(len(posterior) - 1, ind_max + win))
         score = posterior[wind].sum()
         #print(t, ind_max, score, posterior[-1])
         if score > 0.1:
@@ -142,7 +144,7 @@ def online_localization(deviations, vpr_lhood, prior_off_classif, off_map_probs,
             ind_final = int(np.average(wind, weights=posterior[wind]))
             return t, ind_final, posterior
         # compute stuff for bayes recursion
-        E = create_transition_matrix(deviations[t], len(prior), Eoo, theta1, theta2, theta3)
+        E = create_transition_matrix(deviations[t], params)
         # Bayes recursion
         if t == 0:
             posterior = bayes_recursion(vpr_lhood[t], E, off_map_probs[0],

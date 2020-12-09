@@ -34,7 +34,7 @@ def read_descriptors(traverse, tstamps):
     return np.concatenate(descriptors, axis=0)
 
 
-def build_map(traverse, tstamps, poses, vo, descriptors, width):
+def build_map(traverse, tstamps, poses, vo, descriptors, w, max_dist):
     mapG = nx.MultiDiGraph()
     N = len(tstamps)
 
@@ -54,44 +54,69 @@ def build_map(traverse, tstamps, poses, vo, descriptors, width):
 
     # add neighbor edges b/w subsequent frames (loop closures in future)
 
-    for source in tqdm(node_inds, "edges"):
+    att_wt = np.ones(6)
+    att_wt[3:] *= w
+
+    for ind in tqdm(node_inds, "nhood edges"):
 
         # identify nearby nodes and extract relative poses
 
-        nhood = np.arange(source, min(source+width, N))
+        nhood = np.arange(ind, min(ind+2, N))
+        rel_xyzrpy = np.atleast_2d((cum_odom[ind] / cum_odom[nhood]).to_xyzrpy())
+        drel = np.linalg.norm(rel_xyzrpy * att_wt, axis=1)
 
         # insert self-edges and immediate neighbor edges (nhood map)
 
-        for dest in nhood:
+        edges = [(ind, i, "nh", {"rpose": rel_xyzrpy[i-ind], "d": drel[i-ind]})
+                 for i in nhood]
+
+        mapG.add_edges_from(edges)
+
+    # create transition edges (window)
+
+    #allpairs = all_pairs_dijkstra(mapG, cutoff=max_dist, weight='d')
+    allpairs = all_pairs_dijkstra(mapG, cutoff=8)
+
+    for source, (_, paths) in tqdm(allpairs, desc="transition edges", total=N):
+        for dest in paths.keys():
             if dest == source:
                 # self-transition case: assume node represents a line segment
                 # between two midpoints: one between node and predecessor and
                 # one between node and successor node.
                 if source == 0:
-                    start = - vo[0] * 0.25
-                    end = vo[0] * 0.25
+                    start = - mapG[0][1]["nh"]["rpose"] * 0.5 * 0.5
+                    end = mapG[0][1]["nh"]["rpose"] * 0.5 * 0.5
                 elif source == N-1:
-                    start = -0.25 * vo[N-1]
-                    end = 0.25 * vo[N-1]
+                    start = -0.5 * mapG[N-2][N-1]["nh"]["rpose"] * 0.5
+                    end = 0.5 * mapG[N-2][N-1]["nh"]["rpose"] * 0.5
                 else:
-                    start = 0.25 * geometry.SE3.from_xyzrpy(
-                        vo[source-1]).inv().to_xyzrpy()
-                    end = 0.25 * vo[source]
-                mapG.add_edge(source, dest, "tr", s1=start, s2=end)
+                    start = 0.5 * geometry.SE3.from_xyzrpy(
+                        vo[source-1]).inv().to_xyzrpy() * 0.5
+                    end = 0.5 * vo[source] * 0.5
+                mapG.add_edge(source, dest, "self", tO1=start, tO2=end)
             else:
-                # regular transition case: node is origin, transition to
-                # line segment around source node where the segment is
-                # given by average odometry
+                # regular transition case: draw line segment around origin node
+                # and another around the destination node. odometry is then
+                # compared to lines between all points on these line segments
+                source_bw = geometry.SE3.from_xyzrpy(vo[source-1]).inv().to_xyzrpy()
+                tO1 = 0.5 * source_bw if source > 0 else -0.5 * mapG[0][1]["nh"]["rpose"]
+                tO1 = 0.5 * source_bw if source > 0 else -0.5 * mapG[0][1]["nh"]["rpose"]
+                tO2 = 0.5 * vo[source]
 
-                relpose = (cum_odom[source] / cum_odom[dest]).to_xyzrpy()
-                relpose_bw = (cum_odom[source] / cum_odom[dest-1]).to_xyzrpy()
-                s1 = 0.5 * (relpose + relpose_bw)
+                tD1 = 0.5 * ((cum_odom[source] / cum_odom[dest]).to_xyzrpy() +
+                             (cum_odom[source] / cum_odom[dest-1]).to_xyzrpy())
                 if dest < N-1:
-                    relpose_fw = (cum_odom[source] / cum_odom[dest+1]).to_xyzrpy()
-                    s2 = 0.5 * (relpose + relpose_fw)
+                    tD2 = 0.5 * ((cum_odom[source] / cum_odom[dest]).to_xyzrpy() +
+                                 (cum_odom[source] / cum_odom[dest+1]).to_xyzrpy())
                 else:
-                    s2 = 1.5 * relpose - 0.5 * relpose_bw
-                mapG.add_edge(source, dest, "tr", s1=s1, s2=s2)
+                    # TO DO: VERFIY THIS TRANSITION LARGE
+                    tD2 = 1.5 * (cum_odom[source] / cum_odom[dest]).to_xyzrpy() - \
+                            0.5 * (cum_odom[source] / cum_odom[dest-1]).to_xyzrpy()
+                tOD = (cum_odom[source] / cum_odom[dest]).to_xyzrpy()
+
+                mapG.add_edge(source, dest, "nonself",
+                              tO1=tO1, tO2=tO2, tD1=tD1, tD2=tD2,
+                              tOD=tOD)
 
     return mapG
 
@@ -99,29 +124,34 @@ def build_map(traverse, tstamps, poses, vo, descriptors, width):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description=("Build topological map from subsampled traverse data"))
-    parser.add_argument("-t", "--traverse", type=str, default="overcast1",
+    parser.add_argument("-t", "--traverse", type=str, default="overcast",
                         help="traverse name, e.g. overcast, night")
     parser.add_argument("-f", "--filename", type=str, required=True,
                     help="filename containing subsampled traverse poses")
-    parser.add_argument("-w", "--width", type=int, default=8,
+    parser.add_argument("-w", "--attitude-weight", type=float, default=10,
+        help=("weight for attitude component of pose distances equal to d where"
+              "1 / d being rotation angle (rad) equivalent to 1m translation"))
+    parser.add_argument("-d", "--max-dist", type=float, default=7,
         help=("maximum distance for possible transition between nodes"))
-    parser.add_argument("-p", "--pca-dim", type=int, default=4096,
+    parser.add_argument("-p", "--pca-dim", type=int, default=1024,
                         help="number of dimensions for nv descriptor")
     args = parser.parse_args()
 
+    w = args.attitude_weight
+    d = args.max_dist
     traverse = args.traverse
     fname = args.filename
 
     # read reference map node data
     tstamps, poses, vo, descriptors = load_subsampled_data(traverse, fname, args.pca_dim)
 
-    ref_map = build_map(traverse, tstamps, poses, vo, descriptors, args.width)
+    ref_map = build_map(traverse, tstamps, poses, vo, descriptors, w, d)
 
     # save map
     map_dir = path.join(DATA_DIR, traverse, 'saved_maps')
     if not os.path.exists(map_dir):
         os.makedirs(map_dir)
-    fname = f"{fname[:-4]}_wd_{args.width}"
+    fname = f"{fname[:-4]}_wd_{w:.0f}"
 
     with open(path.join(map_dir, f"{fname}.pickle"), "wb") as f:
         pickle.dump(ref_map, f)

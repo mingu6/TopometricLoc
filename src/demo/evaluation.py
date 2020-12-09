@@ -14,13 +14,16 @@ from scipy.sparse import csc_matrix
 import networkx as nx
 from networkx.algorithms.shortest_paths.generic import shortest_path
 from networkx.algorithms.shortest_paths.weighted import all_pairs_dijkstra
+import yaml
 
 from build_reference_map import read_descriptors, build_map, load_subsampled_data
 from hmm_inference import viterbi, forward_algorithm, online_localization
-from measurement_model import vmflhood, vpr_lhood
-from motion_model import create_transition_matrix, create_deviation_matrix
+from measurement_model import vpr_lhood, off_map_prob, off_map_features
+from motion_model import create_transition_matrix, odom_deviation
 from settings import DATA_DIR
 import geometry
+
+self_dirpath = os.path.dirname(os.path.abspath(__file__))
 
 eval_lists = {}
 eval_lists["night"] = np.array([[3000, 200],  # corner odom fucked, sticky, aliased
@@ -41,7 +44,8 @@ eval_lists["dusk"] = np.array([[3000, 200],  # corner odom fucked, sticky, alias
                                 [2100, 200],  # chuck a u
                                 [400, 200]    # straight, aliased, sticky
                                ])
-eval_lists["rain"] = np.array([[3000, 200],  # corner odom fucked, sticky, aliased
+eval_lists["rain"] = np.array([[6440, 60], # minor detour corner
+                               [3000, 200],  # corner odom fucked, sticky, aliased
                                 [0, 200],  # initial bend sticky, o/w good
                                 [6000, 200],  # slight detour, bend, lil sticky
                                 [4900, 200],  # around the two left turns bends
@@ -127,7 +131,7 @@ def plot_viterbi(pred, start_ind, L, data, savedir):
     ax[3].set_xlim(xyzrpyQ[:, 1].min(), xyzrpyQ[:, 1].max())
     ax[3].set_ylim(xyzrpyQ[:, 0].min(), xyzrpyQ[:, 0].max())
     # save plot
-    if start_ind == 420:
+    if start_ind == 6420:
         print(pred, gt)
         plt.show()
     else:
@@ -214,15 +218,21 @@ def vit(start_ind, length, data):
     nv_lhoods = data["nv_lhoods"][start_ind:start_ind+length, :]
     deviations = data["deviations"][start_ind:start_ind+length-1]
     Eoo = data["Eoo"]
-    theta1 = data["theta1"]
-    theta2 = data["theta2"]
-    theta3 = data["theta3"]
+    theta = data["theta"]
+    p_min = data["p_min"]
+    p_max = data["p_max"]
+    d_min = data["d_min"]
+    d_max = data["d_max"]
+    prior = data["prior"]
+    width = data["width"]
     N = data["N"]
     prior = data["prior"]
+    off_map_probs = data["off_map_probs"][start_ind:start_ind+length]
 
-    off_map_probs = np.ones(len(nv_lhoods)) * data["off_map_probs"]
-    transition_matrices = [create_transition_matrix(deviations[t], N, Eoo,
-                                                    theta1, theta2, theta3)
+    params = {"Eoo": Eoo, "theta": theta, "N": N, "p_min": p_min, "p_max": p_max,
+              "d_min": d_min, "d_max": d_max, "width": width}
+
+    transition_matrices = [create_transition_matrix(deviations[t], params)
                            for t in range(length-1)]
     alpha, off_lhoods, on_lhoods = forward_algorithm(
         nv_lhoods, transition_matrices,
@@ -242,16 +252,20 @@ def online(start_ind, data):
     nv_lhoods = data["nv_lhoods"][start_ind:]
     deviations = data["deviations"][start_ind:]
     Eoo = data["Eoo"]
-    theta1 = data["theta1"]
-    theta2 = data["theta2"]
-    theta3 = data["theta3"]
+    theta = data["theta"]
+    p_min = data["p_min"]
+    p_max = data["p_max"]
+    d_min = data["d_min"]
+    d_max = data["d_max"]
     prior = data["prior"]
+    width = data["width"]
     xyzrpy = data["poses"].to_xyzrpy()
 
-    off_map_probs = np.ones(len(deviations)) * data["off_map_probs"]
+    off_map_probs = data["off_map_probs"]
     t, ind, posterior = online_localization(deviations, nv_lhoods,
                                  prior_off_classif, off_map_probs, prior,
-                                 Eoo, theta1, theta2, theta3, xyzrpy)
+                                 Eoo, theta, p_min, p_max, d_min, d_max, width,
+                                            xyzrpy)
     return t, ind, posterior
 
 
@@ -293,62 +307,60 @@ if __name__ == "__main__":
                         help="reference traverse name, e.g. overcast, night")
     parser.add_argument("-qt", "--query-traverse", type=str, default="night",
                         help="query traverse name, e.g. dusk, night")
-    parser.add_argument("-rf", "--reference-filename", type=str, default='t_1_w_5.csv',
+    parser.add_argument("-rf", "--reference-filename", type=str, default='t_1_w_10_wd_8.pickle',
                     help="filename containing subsampled reference traverse poses")
-    parser.add_argument("-qf", "--query-filename", type=str, default='t_1_w_5.csv',
+    parser.add_argument("-qf", "--query-filename", type=str, default='t_1_w_10.csv',
                     help="filename containing subsampled query traverse poses")
-    parser.add_argument("-w", "--attitude-weight", type=float, default=5,
-        help=("weight for attitude component of pose distances equal to d where"
-              "1 / d being rotation angle (rad) equivalent to 1m translation"))
-    parser.add_argument("-p", "--pca-dim", type=int, default=4096,
-                        help="number of dimensions for nv descriptor")
-    parser.add_argument("-s", "--start", type=int, default=0, help="start index of query sequence")
-    parser.add_argument("-L", "--length", type=int, default=30, help="query sequence length for viterbi")
-    parser.add_argument("-K", "--top-k", type=int, default=20, help="number of retrievals for obs lhood")
+    parser.add_argument("-p", "--params", type=str, default="default.yaml",
+                        help="filename containing model parameters")
     args = parser.parse_args()
 
     # configuration variables
 
-    w = args.attitude_weight;
     ref_traverse = args.reference_traverse
     query_traverse = args.query_traverse
     ref_fname = args.reference_filename
     q_fname = args.query_filename
-    pca_dim = args.pca_dim
-    start_ind = args.start
-    end_ind = start_ind + args.length
-    T = args.length
-    k = args.top_k
+
+    # parameters
+    params_path = path.abspath(path.join(self_dirpath, "..", "params"))
+    with open(path.join(params_path, args.params), 'r') as f:
+        params = yaml.load(f)
+
+    w = params["motion"]["att_wt"]
+    Eoo = params["motion"]["p_off_off"]
+    theta = params["motion"]["theta"]
+    p_min = params["motion"]["p_off_min"]
+    p_max = params["motion"]["p_off_max"]
+    d_min = params["motion"]["d_min"]
+    d_max = params["motion"]["d_max"]
+    p_off_prior = params["measurement"]["p_off_prior"]
+    prior_off_classif = p_off_prior
+    lhmax = params["measurement"]["max_lvl"]
+    lvl = params["measurement"]["min_lvl"]
+    alpha = params["measurement"]["alpha"]
+    pca_dim = params["measurement"]["pca_dim"]
+    k = params["measurement"]["k"]
+    p_min_meas = params["measurement"]["p_off_min"]
+    p_max_meas = params["measurement"]["p_off_max"]
 
     att_wt = np.ones(6)
     att_wt[3:] *= w
-
-    # parameters
-    Eoo = 0.7
-    theta = np.ones((T - 1, 3))
-    theta[:, 0] *= 2.0
-    theta[:, 1] *= 0.8
-    theta[:, 2] *= 2.0
-    kappa = 5.0
-    p_off_prior = 0.2
-    prior_off_classif = 0.2
-    lhmax = 0.5
-    alpha = 1.0
-
-    off_map_prob = 0.2
 
     # load/build reference map
     start = time.time()
     print("Loading reference map...")
     map_dir = path.join(DATA_DIR, ref_traverse, 'saved_maps')
-    fpath = path.join(map_dir, f'{ref_fname[:-4]}_wd_{w:.0f}.pickle')
+    fpath = path.join(map_dir, ref_fname)
+    spl = ref_fname.split("_")  # retrieve raw poses
+    subsampled_fname = "_".join(spl[:4]) + ".csv"
     tstamps, poses, vo, descriptors = \
-        load_subsampled_data(ref_traverse, ref_fname, pca_dim)
+        load_subsampled_data(ref_traverse, subsampled_fname, pca_dim)
     xyzrpy = poses.to_xyzrpy()
     try:
         with open(fpath, "rb") as f:
             ref_map = pickle.load(f)
-    except FileNotFoundError as err:
+    except FileNotFoundError as err:  # NOTE: THIS DOES NOT WORK, JUST BUILD THE MAP FIRST
         print("cached map file not found, building map...")
         tstamps, poses, vo, _ = load_subsampled_data(ref_traverse, ref_fname, pca_dim)
         ref_map = build_map(ref_traverse, tstamps, poses, vo, descriptors,
@@ -360,6 +372,7 @@ if __name__ == "__main__":
     # add off map node
     ref_map.add_node("off")
     N = len(ref_map)
+    wd = int(spl[-1][:-7])  # number of transitions per node (width)
 
     # load reference descriptors
     start = time.time()
@@ -383,8 +396,9 @@ if __name__ == "__main__":
     start = time.time()
     print("Computing observation likelihoods...")
     sims = descriptorsQ[:, :pca_dim] @ descriptors[:, :pca_dim].T
-    #nv_lhoods = vmflhood(sims, kappa)
-    nv_lhoods = vpr_lhood(sims, lhmax, alpha, k)
+    nv_lhoods = vpr_lhood(sims, lhmax, lvl, alpha, k)
+    off_features = off_map_features(sims, k)
+    off_map_probs = off_map_prob(off_features, p_min_meas, p_max_meas)
     print(f"Done! duration {time.time() - start:.1f}s")
 
     # deviations typically precomputed for whole query traverse, precompute
@@ -395,7 +409,7 @@ if __name__ == "__main__":
         deviations = load_deviations(ref_traverse, query_traverse, ref_fname, q_fname)
     except FileNotFoundError:
         print("Precomputed deviations not found, computing...")
-        deviations = [create_deviation_matrix(ref_map, o, Eoo, w) for
+        deviations = [odom_deviation(ref_map, o, w) for
                       o in tqdm(odomQ, desc='odom deviations')]
         save_deviations(deviations, ref_traverse, query_traverse, ref_fname, q_fname)
         print("Successfully saved deviations to disk!")
@@ -409,22 +423,25 @@ if __name__ == "__main__":
     data = {"nv_lhoods": nv_lhoods,
             "deviations": deviations,
             "Eoo": Eoo,
-            "theta1": theta[0, 0],
-            "theta2": theta[0, 1],
-            "theta3": theta[0, 2],
-            "off_map_probs": off_map_prob,
+            "theta": theta,
+            "p_min": p_min,
+            "p_max": p_max,
+            "d_min": d_min,
+            "d_max": d_max,
+            "off_map_probs": off_map_probs,
             "N": N,
             "prior": prior,
             "poses": poses,
             "posesQ": posesQ,
             "sims": sims,
             "w": w,
+            "width": wd,
             "ref_map": ref_map}
 
     # batch localization (entire sequence)
 
     results_dir = path.join(DATA_DIR, query_traverse, "localization",
-                            f"{query_traverse}_{q_fname[:-4]}_{ref_traverse}_{ref_fname[:-4]}")
+                            f"{query_traverse}_{q_fname[:-4]}_{ref_traverse}_{ref_fname[:-7]}")
     viterbi_dir = path.join(results_dir, "viterbi_figures", args.description)
     online_dir = path.join(results_dir, "online_figures", args.description)
     viterbi_results_dir = path.join(results_dir, "viterbi_results")
