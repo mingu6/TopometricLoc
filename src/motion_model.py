@@ -47,8 +47,8 @@ def odom_deviation(ref_map, odom, w):
     dev = mindist_pt_seg(odom, s1, s2)
     # create deviation matrix
     N = len(ref_map) - 1
-    E = sparse.csc_matrix((dev, (source, des)), shape=(N, N))
-    dmin = np.squeeze(E.min(axis=1).toarray())
+    E = sparse.csc_matrix((np.exp(-dev), (source, des)), shape=(N, N))
+    dmin = -np.log(np.squeeze(E.max(axis=1).toarray()))
     dev_data = {"source": source, "des": des, "dev": dev, "dev_off": dmin}
     return dev_data
 

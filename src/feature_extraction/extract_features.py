@@ -38,9 +38,16 @@ def main(args):
         os.makedirs(global_dir, exist_ok=True)
 
         d = os.path.join(DATA_DIR, traverse, 'images/left')
+        d1 = os.path.join(DATA_DIR, traverse, 'images/right')
         fnames = [f for f in sorted(os.listdir(d)) if f.endswith(".png")]
         for f in tqdm(fnames, desc='images'):
-            image = cv2.imread(os.path.join(d, f))
+            impath = os.path.join(d, f)
+            image = cv2.imread(impath)
+            if type(image) is not np.ndarray:
+                # remove corrupt images from left and right cameras
+                os.remove(impath)
+                os.remove(os.path.join(d1, f))
+                continue
             if args.net == 'hfnet_tf':
                 image = cv2.resize(image, (960, 720))
             features = net.infer(image)

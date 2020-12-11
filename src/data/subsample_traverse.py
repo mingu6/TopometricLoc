@@ -32,6 +32,8 @@ def spatial_subsample(timestamps, poses, vo_ts, vo,
         curr_diff = t_mag + attitude_weight * R_mag
         if curr_diff > subsample_threshold:
             pose_xyzrpy = poses[np.where(timestamps == vo_ts[i, 1])].to_xyzrpy()
+            if not len(pose_xyzrpy):  # image is missing, but vo entry exists, skip to next frame
+                continue
             pose_xyzrpy[:3] -= xyz_centre
 
             tstamps.append(vo_ts[i, 1])

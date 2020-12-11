@@ -19,24 +19,38 @@ def forward_recursion(vpr_lhood, transition_matrix, off_map_prob, alpha_prev,
         fw_lhood_prior = transition_matrix.T @ alpha_prev
     else:
         fw_lhood_prior = alpha_prev
-    prior_belief = fw_lhood_prior / fw_lhood_prior.sum()  # p(x_t = off | z_{1:t-1})
+    predict_belief = fw_lhood_prior / fw_lhood_prior.sum()  # p(x_t = off | z_{1:t-1})
     # perform posterior update with new off-map classification
     r1 = prior_off_classif / (1. - prior_off_classif)
     r2 = (1. - off_map_prob) / off_map_prob
-    r3 = (1 - prior_belief[-1]) / prior_belief[-1]
+    r3 = (1 - predict_belief[-1]) / predict_belief[-1]
     updated_belief_off = 1. / (1. + r1 * r2 * r3)  # p(x_t = off | z_{1:t})
     # compute scale factor for new forward lhood
-    scale_factor = prior_belief[:-1] @ vpr_lhood / (1. - updated_belief_off)
+    scale_factor = predict_belief[:-1] @ vpr_lhood / (1. - updated_belief_off)
 
     # compute recursion
 
-    lhood_off = updated_belief_off * scale_factor / prior_belief[-1]
-    lhood_on = (1. - updated_belief_off) * scale_factor / (1. - prior_belief[-1])
+    lhood_off = updated_belief_off * scale_factor / predict_belief[-1]
+    lhood_on = (1. - updated_belief_off) * scale_factor / (1. - predict_belief[-1])
     lhoods = np.append(vpr_lhood, lhood_off)
     fw_lhood = fw_lhood_prior * lhoods
-    # import pdb; pdb.set_trace()
 
-    return fw_lhood, lhood_off, lhood_on
+    # aggregate transition matrix into on/off map states only by solving for
+    # the transition matrix that propagates prev. aggregated belief to predicted
+
+    if not initial:
+        predict_agg = np.array([predict_belief[:-1].sum(), predict_belief[-1]])
+        prior_agg = np.array([alpha_prev[:-1].sum(), alpha_prev[-1]])
+        prior_agg /= prior_agg.sum()
+
+        p_off_off = transition_matrix[-1, -1]
+        p_on_on = (predict_agg[0] - (1. - p_off_off) * prior_agg[1]) / prior_agg[0]
+        agg_transition = np.array([[p_on_on,        1. - p_on_on],
+                                   [1. - p_off_off, p_off_off]])
+    else:
+        agg_transition = None
+
+    return fw_lhood, lhood_off, lhood_on, agg_transition
 
 
 def forward_algorithm(nv_lhoods, transition_matrices, prior_off_classif,
@@ -47,19 +61,20 @@ def forward_algorithm(nv_lhoods, transition_matrices, prior_off_classif,
     out = np.empty((T, N))
     off_map_lhoods = np.empty(T)  # obs lhood of off-map p(z_t | x_t = off)
     on_map_lhoods = np.empty(T)  # obs lhood of within-map p(z_t | x_t ne off)
+    agg_Es = np.empty((T-1, 2, 2))  # aggregated on-off transition matrices
 
     for t in range(T):
         if t == 0:
-            out[t], off_map_lhoods[t], on_map_lhoods[t] = forward_recursion(
+            out[t], off_map_lhoods[t], on_map_lhoods[t], _ = forward_recursion(
                 nv_lhoods[t], transition_matrices[t-1],
                 off_map_prob[t], prior, prior_off_classif, initial=True
             )
         else:
-            out[t], off_map_lhoods[t], on_map_lhoods[t] = forward_recursion(
+            out[t], off_map_lhoods[t], on_map_lhoods[t], agg_Es[t-1] = forward_recursion(
                 nv_lhoods[t], transition_matrices[t-1], off_map_prob[t],
                 out[t-1], prior_off_classif, initial=False
             )
-    return out, off_map_lhoods, on_map_lhoods
+    return out, off_map_lhoods, on_map_lhoods, agg_Es
 
 
 def viterbi(obs_lhoods, transition_matrices, prior):

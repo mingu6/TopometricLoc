@@ -55,9 +55,20 @@ eval_lists["rain"] = np.array([[6440, 60], # minor detour corner
                                 [400, 200]    # straight, aliased, sticky
                                ])
 
+eval_lists["rain_detour"] = np.array([[4850, 200], # minor detour corner
+                               [6050, 200],  # corner odom fucked, sticky, aliased
+                                [0, 200],  # initial bend sticky, o/w good
+                                [6000, 200],  # slight detour, bend, lil sticky
+                                [4900, 200],  # around the two left turns bends
+                                [4800, 200],  # aliased as shit...
+                                [1500, 200],  # RHS sticky
+                                [2100, 200],  # chuck a u
+                                [400, 200]    # straight, aliased, sticky
+                               ])
+
 def save_deviations(dev, ref_traverse, q_traverse, ref_fname, q_fname):
     savedir = path.join(DATA_DIR, q_traverse, "localization",
-                       f"{q_traverse}_{q_fname[:-4]}_{ref_traverse}_{ref_fname[:-4]}")
+                       f"{q_traverse}_{q_fname[:-4]}_{ref_traverse}_{ref_fname[:-7]}")
     os.makedirs(savedir, exist_ok=True)
     with open(path.join(savedir, "deviations.pickle"), 'wb') as f:
         pickle.dump(dev, f)
@@ -66,7 +77,7 @@ def save_deviations(dev, ref_traverse, q_traverse, ref_fname, q_fname):
 
 def load_deviations(ref_traverse, q_traverse, ref_fname, q_fname):
     devdir = path.join(DATA_DIR, q_traverse, "localization",
-                       f"{q_traverse}_{q_fname[:-4]}_{ref_traverse}_{ref_fname[:-4]}")
+                       f"{q_traverse}_{q_fname[:-4]}_{ref_traverse}_{ref_fname[:-7]}")
     os.makedirs(devdir, exist_ok=True)
     with open(path.join(devdir, "deviations.pickle"), 'rb') as f:
         dev = pickle.load(f)
@@ -228,17 +239,22 @@ def vit(start_ind, length, data):
     N = data["N"]
     prior = data["prior"]
     off_map_probs = data["off_map_probs"][start_ind:start_ind+length]
+    off_map_probs[60:140] = np.random.uniform(0.20, 0.24, size=80)
 
     params = {"Eoo": Eoo, "theta": theta, "N": N, "p_min": p_min, "p_max": p_max,
               "d_min": d_min, "d_max": d_max, "width": width}
 
     transition_matrices = [create_transition_matrix(deviations[t], params)
                            for t in range(length-1)]
-    alpha, off_lhoods, on_lhoods = forward_algorithm(
+    alpha, off_lhoods, on_lhoods, agg_Es = forward_algorithm(
         nv_lhoods, transition_matrices,
         prior_off_classif, off_map_probs, prior
     )
     lhoods = np.concatenate((nv_lhoods, off_lhoods[:, None]), axis=1)
+    agg_lhoods = np.vstack((on_lhoods, off_lhoods)).T
+    agg_prior = np.array([1. - Eoo, Eoo])
+    state_seq_hl = viterbi(agg_lhoods, agg_Es, agg_prior)
+    import pdb; pdb.set_trace()
     state_seq = viterbi(lhoods, transition_matrices, prior)
     return state_seq
 
@@ -436,7 +452,8 @@ if __name__ == "__main__":
             "sims": sims,
             "w": w,
             "width": wd,
-            "ref_map": ref_map}
+            "ref_map": ref_map,
+            "off_map_feats": off_features}
 
     # batch localization (entire sequence)
 
