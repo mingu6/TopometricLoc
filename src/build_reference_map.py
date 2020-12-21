@@ -24,14 +24,25 @@ def load_subsampled_data(traverse, fname, pca_dim, ind=None):
     xyzrpy = df[['northing', 'easting', 'down', 'roll', 'pitch', 'yaw']].to_numpy()
     vo = df[['vo_x', 'vo_y', 'vo_z', 'vo_roll', 'vo_pitch', 'vo_yaw']].to_numpy()
     poses = geometry.SE3.from_xyzrpy(xyzrpy[:ind_end])
-    descriptors = read_descriptors(traverse, tstamps)[:ind_end, :pca_dim]
-    return tstamps, poses, vo, descriptors
+    loc_des, glb_des = read_descriptors(traverse, tstamps)
+    return tstamps, poses, vo, loc_des[:ind_end], glb_des[:ind_end, :pca_dim]
 
 
 def read_descriptors(traverse, tstamps):
-    dirpath = path.join(DATA_DIR, traverse, 'features/global')
-    descriptors = [np.load(path.join(dirpath, f'{ts}.npy')) for ts in tstamps]
-    return np.concatenate(descriptors, axis=0)
+    g_dirpath = path.join(DATA_DIR, traverse, 'features/global')
+    l_dirpath = path.join(DATA_DIR, traverse, 'features/local')
+
+    glb_des = []
+    local_des = []
+
+    for ts in tqdm(tstamps, desc=f"loading descriptors {traverse}"):
+        # global descriptors
+        glb_des.append(np.load(path.join(g_dirpath, f'{ts}.npy')))
+        # local descriptors
+        with np.load(path.join(l_dirpath, f'{ts}.npz')) as f:
+            local_des.append(dict(f))
+    glb_des = np.concatenate(glb_des, axis=0)
+    return local_des, glb_des
 
 
 def build_map(traverse, tstamps, poses, vo, descriptors, width):

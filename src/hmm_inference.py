@@ -49,6 +49,7 @@ def forward_recursion(vpr_lhood, transition_matrix, off_map_prob, alpha_prev,
                                    [1. - p_off_off, p_off_off]])
     else:
         agg_transition = None
+    #import pdb; pdb.set_trace()
 
     return fw_lhood, lhood_off, lhood_on, agg_transition
 
@@ -96,6 +97,36 @@ def viterbi(obs_lhoods, transition_matrices, prior):
                         .multiply(obs_lhoods[t][:, None])
             V[t, :] = update.tocsc()[:-1, :].max(axis=0).toarray()[0, :]
             ptr[t-1] = np.array(update.tocsc()[:-1, :].argmax(axis=0))[0, :]
+
+    # run backtracing for optimal path
+
+    opt_seq = np.empty(T, dtype=np.int)
+    opt_seq[-1] = np.argmax(V[-1, :-1])
+
+    for t in reversed(range(T-1)):
+        opt_seq[t] = ptr[t, opt_seq[t+1]]
+
+    return opt_seq
+
+
+def constr_viterbi(obs_lhoods, transition_matrices, prior, constr):
+    T = obs_lhoods.shape[0]
+
+    V = np.zeros_like(obs_lhoods)
+    V[0, :] = prior * obs_lhoods[0]
+    ptr = np.empty((T - 1, obs_lhoods.shape[1]), dtype=np.int)
+
+    # run main step, compute path lhood and save backtracing ptrs
+
+    for t in range(1, T):
+        update = transition_matrices[t-1].multiply(V[t-1][:, None])\
+                    .multiply(obs_lhoods[t][:, None])
+        if constr[t] == 0:
+            V[t, :] = update.tocsc()[:-1, :].max(axis=0).toarray()[0, :]
+            ptr[t-1] = np.array(update.tocsc()[:-1, :].argmax(axis=0))[0, :]
+        else:
+            V[t, :] = update.tocsc()[-1, :].toarray()[0, :]
+            ptr[t-1] = -1 * np.ones(V.shape[1], dtype=np.int)
 
     # run backtracing for optimal path
 

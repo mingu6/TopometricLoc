@@ -17,7 +17,7 @@ from networkx.algorithms.shortest_paths.weighted import all_pairs_dijkstra
 import yaml
 
 from build_reference_map import read_descriptors, build_map, load_subsampled_data
-from hmm_inference import viterbi, forward_algorithm, online_localization
+from hmm_inference import viterbi, constr_viterbi, forward_algorithm, online_localization
 from measurement_model import vpr_lhood, off_map_prob, off_map_features
 from motion_model import create_transition_matrix, odom_deviation
 from settings import DATA_DIR
@@ -100,11 +100,14 @@ def plot_viterbi(pred, start_ind, L, data, savedir):
     ax[0].set_title('Sequence localizer (Viterbi)')
     ax[0].scatter(xyzrpy[:, 1], xyzrpy[:, 0], color='black', s=5)
     ax[0].scatter(xyzrpyQ[:, 1], xyzrpyQ[:, 0], color='green', s=5)
+    ax[0].scatter(xyzrpyQ[pred == -1, 1],
+                  xyzrpyQ[pred == -1, 0], color='red', s=5)
     ax[0].axis('square')
     for t in range(T):
-        px = np.vstack((xyzrpyQ[t, 1], xyzrpy[pred[t], 1]))
-        py = np.vstack((xyzrpyQ[t, 0], xyzrpy[pred[t], 0]))
-        ax[0].plot(px, py, 'g-')
+        if pred[t] != -1:
+            px = np.vstack((xyzrpyQ[t, 1], xyzrpy[pred[t], 1]))
+            py = np.vstack((xyzrpyQ[t, 0], xyzrpy[pred[t], 0]))
+            ax[0].plot(px, py, 'g-')
     # plot best match based on single image retrieval only
 
     # extract image retrieval indices
@@ -123,11 +126,14 @@ def plot_viterbi(pred, start_ind, L, data, savedir):
     ax[2].set_title('Sequence localizer (Viterbi)')
     ax[2].scatter(xyzrpy[:, 1], xyzrpy[:, 0], color='black', s=5)
     ax[2].scatter(xyzrpyQ[:, 1], xyzrpyQ[:, 0], color='green', s=5)
+    ax[2].scatter(xyzrpyQ[pred == -1, 1],
+                  xyzrpyQ[pred == -1, 0], color='red', s=5)
     ax[2].axis('square')
     for t in range(T):
-        px = np.vstack((xyzrpyQ[t, 1], xyzrpy[pred[t], 1]))
-        py = np.vstack((xyzrpyQ[t, 0], xyzrpy[pred[t], 0]))
-        ax[2].plot(px, py, 'g-')
+        if pred[t] != -1:
+            px = np.vstack((xyzrpyQ[t, 1], xyzrpy[pred[t], 1]))
+            py = np.vstack((xyzrpyQ[t, 0], xyzrpy[pred[t], 0]))
+            ax[2].plot(px, py, 'g-')
     ax[2].set_xlim(xyzrpyQ[:, 1].min(), xyzrpyQ[:, 1].max())
     ax[2].set_ylim(xyzrpyQ[:, 0].min(), xyzrpyQ[:, 0].max())
 
@@ -142,9 +148,9 @@ def plot_viterbi(pred, start_ind, L, data, savedir):
     ax[3].set_xlim(xyzrpyQ[:, 1].min(), xyzrpyQ[:, 1].max())
     ax[3].set_ylim(xyzrpyQ[:, 0].min(), xyzrpyQ[:, 0].max())
     # save plot
-    if start_ind == 6420:
-        print(pred, gt)
+    if start_ind in [4850, 6050, 1500]:
         plt.show()
+        import pdb; pdb.set_trace()
     else:
         fig.savefig(path.join(savedir, f'viterbi_matches_{start_ind}_{L}.png'))
         plt.close(fig)
@@ -239,7 +245,19 @@ def vit(start_ind, length, data):
     N = data["N"]
     prior = data["prior"]
     off_map_probs = data["off_map_probs"][start_ind:start_ind+length]
-    off_map_probs[60:140] = np.random.uniform(0.20, 0.24, size=80)
+
+    # synthetic classifier
+    if start_ind == 6050:
+        i1 = 75
+        i2 = 180
+    elif start_ind == 4850:
+        i1 = 60
+        i2 = 140
+    off_map_probs = np.random.binomial(1, 0.2, size=len(off_map_probs)).astype(np.float)
+    if start_ind in [6050, 4850]:
+        off_map_probs[i1:i2] = np.random.binomial(1, 0.8, size=i2-i1)
+    off_map_probs[off_map_probs == 0] = 0.4
+    off_map_probs[off_map_probs == 1] = 0.6
 
     params = {"Eoo": Eoo, "theta": theta, "N": N, "p_min": p_min, "p_max": p_max,
               "d_min": d_min, "d_max": d_max, "width": width}
@@ -254,8 +272,8 @@ def vit(start_ind, length, data):
     agg_lhoods = np.vstack((on_lhoods, off_lhoods)).T
     agg_prior = np.array([1. - Eoo, Eoo])
     state_seq_hl = viterbi(agg_lhoods, agg_Es, agg_prior)
-    import pdb; pdb.set_trace()
-    state_seq = viterbi(lhoods, transition_matrices, prior)
+    state_seq = constr_viterbi(lhoods, transition_matrices, prior, state_seq_hl)
+    #import pdb; pdb.set_trace()
     return state_seq
 
 
@@ -350,8 +368,8 @@ if __name__ == "__main__":
     p_max = params["motion"]["p_off_max"]
     d_min = params["motion"]["d_min"]
     d_max = params["motion"]["d_max"]
-    p_off_prior = params["measurement"]["p_off_prior"]
-    prior_off_classif = p_off_prior
+    p_off_prior = params["init"]["prior_off"]
+    prior_off_classif = params["measurement"]["p_off_prior"]
     lhmax = params["measurement"]["max_lvl"]
     lvl = params["measurement"]["min_lvl"]
     alpha = params["measurement"]["alpha"]
@@ -415,6 +433,9 @@ if __name__ == "__main__":
     nv_lhoods = vpr_lhood(sims, lhmax, lvl, alpha, k)
     off_features = off_map_features(sims, k)
     off_map_probs = off_map_prob(off_features, p_min_meas, p_max_meas)
+    np.clip(off_map_probs, 0.4, 0.6, out=off_map_probs)
+    # off_map_probs[off_map_probs >= 0.5] = 0.6
+    # off_map_probs[off_map_probs < 0.5] = 0.4
     print(f"Done! duration {time.time() - start:.1f}s")
 
     # deviations typically precomputed for whole query traverse, precompute
@@ -476,6 +497,7 @@ if __name__ == "__main__":
         T = ev[1]
 
         state_seq = vit(start_ind, T, data)
+        #import pdb; pdb.set_trace()
         plot_viterbi(state_seq, start_ind, T, data, viterbi_dir)
 
         # online filtering localizaton

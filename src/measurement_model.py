@@ -3,11 +3,15 @@ import numpy as np
 
 def vpr_lhood(query_similarities, lhmax, lvl, alpha, k):
     w = np.array([0.6, 0.8, 1.0, 0.8, 0.6])
+    w = np.array([0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 0.9, 0.8, 0.7, 0.6, 0.5])
+    #w = np.array([0.0, 0.0, 1.0, 0.0, 0.0])
     ind_max = np.argpartition(-query_similarities, k, axis=1)
 
     lhoods = np.zeros_like(query_similarities)
     qsims = query_similarities[np.arange(lhoods.shape[0])[:, None], ind_max[:, :k]]
-    qsims = (qsims - qsims.min(axis=1)[:, None]) / qsims.max(axis=1)[:, None]
+    qsims = (qsims - qsims.min(axis=1)[:, None])
+    qsims = qsims / qsims.sum(axis=1)[:, None] * 5
+    #qsims = (qsims - qsims.min(axis=1)[:, None]) / qsims.max(axis=1)[:, None]
     qsims = (qsims ** alpha) * lhmax
     qsims += lvl
 
@@ -17,6 +21,23 @@ def vpr_lhood(query_similarities, lhmax, lvl, alpha, k):
         lhoods[i] += 1.
     # lhoods = np.exp(5.0 * query_similarities)
     return lhoods
+
+def retrieval_fn(query_sims, k):
+    # kernel fn for smoothing retrievals
+    s_r = 2.
+    w = np.exp(- np.arange(-5, 6) ** 2. / (2. * s_r ** 2.))
+
+    # retrievals out
+    r = np.zeros_like(query_sims)
+    ind_max = np.argpartition(-query_sims, k, axis=1)
+    qsims = query_sims[np.arange(len(r))[:, None], ind_max[:, :k]]
+    qsims = (qsims - qsims.min(axis=1)[:, None])
+    qsims = qsims / qsims.sum(axis=1)[:, None]
+    # set normalized similarities as non-zero elements in retrieval fn output
+    r[np.arange(len(r))[:, None], ind_max[:, :k]] = qsims
+    for i in range(len(r)):
+        r[i] = np.convolve(r[i], w, mode='same')
+    return r
 
 
 def retrieve_standardize(sims, k):
@@ -30,7 +51,7 @@ def retrieve_standardize(sims, k):
 def contiguous_peaks(ind_k):
     peaks = []
     offset = ind_k[:, 1:] - ind_k[:, :-1]
-    close = offset < 3.  # retrievals are nearby, forms a peak
+    close = offset <= 3.01  # retrievals are nearby, forms a peak
     for t in range(len(ind_k)):
         inds = np.diff(close[t]).nonzero()[0] + 1
         if close[t, 0]:
@@ -69,8 +90,9 @@ def scaled_logistic(logits, pmin, pmax):
 
 
 def off_map_prob(features, pmin, pmax):
-    coef = np.array([-1.5, 0.6, -1.0])
-    logit = features @ coef
+    coef = np.array([-4.0, 3.0, 1.2])
+    inter = 1.0
+    logit = inter + features @ coef
     return scaled_logistic(logit, pmin, pmax)
 
 
