@@ -26,7 +26,6 @@ def spatial_subsample(timestamps, poses, vo_ts, vo,
     vo_sub = []
     vo_accum = geometry.SE3.from_xyzrpy(np.zeros(6))
 
-    pose_temp = poses[start_ind]  # most recent subsampled node
     for i in tqdm(range(start_ind, len(vo_ts)), leave=False):
         t_mag, R_mag = vo_accum.magnitude()
         curr_diff = t_mag + attitude_weight * R_mag
@@ -43,12 +42,16 @@ def spatial_subsample(timestamps, poses, vo_ts, vo,
             vo_accum = geometry.SE3.from_xyzrpy(np.zeros(6))
         vo_accum *= vo[i]  # accumulate odometry
 
+    # vo has 1 less row than rtk ground truth (relative)
+    # pad with zeros to ensure same size for adding to pd df and saving
     vo_sub.append(np.zeros(6))
     tstamps = np.asarray(tstamps, dtype=np.int64)
     xyzrpy = np.asarray(xyzrpy)
     vo_sub = np.asarray(vo_sub)
 
-    return tstamps, xyzrpy, vo_sub
+    # remove first two observations since camera + rtk wigs out
+    # on initialization, yielding garbage vo and/or rtk readings
+    return tstamps[2:], xyzrpy[2:], vo_sub[2:]
 
 
 if __name__ == "__main__":
@@ -101,15 +104,15 @@ if __name__ == "__main__":
         tstamps_sub, xyzrpy_sub, vo_sub = spatial_subsample(
             tstamps, poses, vo_ts, vo, thres, w)
 
-        acc_pose = geometry.SE3.from_xyzrpy(xyzrpy_sub[0])
-        poses_vo = [acc_pose.to_xyzrpy()]
-        for v in vo:
-            acc_pose *= v
-            poses_vo.append(acc_pose.to_xyzrpy())
-        poses_vo = np.asarray(poses_vo)
-        #plt.scatter(xyzrpy_sub[:, 1], xyzrpy_sub[:, 0], color='green')
-        #plt.scatter(poses_vo[:, 1], poses_vo[:, 0], color='red')
-        #plt.show()
+        # acc_pose = geometry.SE3.from_xyzrpy(xyzrpy_sub[0])
+        # poses_vo = [acc_pose.to_xyzrpy()]
+        # for v in vo:
+            # acc_pose *= v
+            # poses_vo.append(acc_pose.to_xyzrpy())
+        # poses_vo = np.asarray(poses_vo)
+        # plt.scatter(xyzrpy_sub[:, 1], xyzrpy_sub[:, 0], color='green')
+        # plt.scatter(poses_vo[:, 1], poses_vo[:, 0], color='red')
+        # plt.show()
         # save timestamps of subsampled traverse to disk
 
         save_path = path.join(traverse_path, "subsampled")

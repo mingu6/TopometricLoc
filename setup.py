@@ -10,8 +10,6 @@ setup(
         'tqdm',
         'matplotlib',
         'ipykernel',
-        'networkx',
-        'scikit-learn',
         'PyYAML'
     ],
     package_dir = {'': 'src/'}

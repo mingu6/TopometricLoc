@@ -15,5 +15,5 @@ measurement:
   p_off_prior: 0.5
   p_off_min: 0.0
   p_off_max: 1.0
-init:
+other:
   prior_off: 0.20
