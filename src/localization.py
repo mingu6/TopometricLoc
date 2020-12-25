@@ -3,6 +3,7 @@ import numpy as np
 from scipy import sparse
 
 from motion import odom_deviation, transition_probs
+from measurement import measurement_update
 
 
 class Localization:
@@ -19,16 +20,23 @@ class Localization:
 
         # reference map
         self.refMap = refMap
-        self.refMap.odom_segments[..., -1] *= self.motion_params["att_wt"]
+        self.odom_segments = refMap.odom_segments.copy()
+        self.odom_segments[..., -1] *= self.motion_params["att_wt"]
+
+    def init(self, qOdom, qGlb, qLoc):
+        """
+        Allows for any initialization at time 0 before first motion update
+        """
+        self._update_meas(qGlb, qLoc)
+        return None
 
     def _update_motion(self, qOdom):
         """
-        Given query odometry, create transition matrix and
-        update belief
+        Applies motion update to belief.
         """
         att_wt = self.motion_params["att_wt"]
         # compute deviations and within -> within/off probabilities
-        dev = odom_deviation(qOdom, self.refMap, att_wt)
+        dev = odom_deviation(qOdom, self.odom_segments, att_wt)
         within, off = transition_probs(dev,
                                        self.motion_params["p_off_min"],
                                        self.motion_params["p_off_max"],
@@ -53,73 +61,25 @@ class Localization:
         return None
 
     def _update_meas(self, qGlb, qLoc):
-        self.belief 
+        """
+        Updates belief using image local and global features.
+        """
+        query_sims = self.refMap.glb_des @ qGlb
+        self.belief = measurement_update(self.belief, query_sims, qLoc,
+                                         self.refMap, self.meas_params)
+        return None
 
     def update(self, qOdom, qGlb, qLoc):
-        asdas
+        """
+        Applies full motion and meas. update to belief.
+        """
+        self._update_motion(qOdom)
+        self._update_meas(qGlb, qLoc)
+        return None
 
-    def converged(self):
-        asdas
-
-
-def bayes_recursion(vpr_lhood, transition_matrix, off_map_prob, prior_belief,
-                      prior_off_classif, initial=False):
-    """
-    update posterior belief
-
-    NOTE: If initial=True, alpha_prev must be prior belief at time 0
-    """
-    # compute factor used to rescale inverse sensor (off-map) measurements
-
-    # compute prior belief after motion update
-    if not initial:
-        prediction = transition_matrix.T @ prior_belief
-    else:
-        prediction = prior_belief
-    # perform posterior update with new off-map classification
-    r1 = prior_off_classif / (1. - prior_off_classif)
-    r2 = (1. - off_map_prob) / off_map_prob
-    r3 = (1 - prior_belief[-1]) / prior_belief[-1]
-    updated_belief_off = 1. / (1. + r1 * r2 * r3)  # p(x_t = off | z_{1:t})
-    # compute scale factor for new forward lhood
-    scale_factor = prior_belief[:-1] @ vpr_lhood / (1. - updated_belief_off)
-
-    # compute recursion
-
-    lhood_off = updated_belief_off * scale_factor / prior_belief[-1]
-    lhoods = np.append(vpr_lhood, lhood_off)
-    posterior_belief = prediction * lhoods
-    posterior_belief /= posterior_belief.sum()
-
-    return posterior_belief
-
-
-def online_localization(deviations, vpr_lhood, prior_off_classif, off_map_probs, prior,
-                        Eoo, theta, p_min, p_max, d_min, d_max, width, xyzrpy):
-    win = 5
-    posterior = prior.copy()
-    params = {"Eoo": Eoo, "theta": theta, "N": len(prior), "p_min": p_min,
-              "p_max": p_max, "d_min": d_min, "d_max": d_max, "width": width}
-    for t in range(len(deviations)):
-        # check convergence
-        ind_max = np.argmax(posterior[:-1])
-        wind = np.arange(max(0, ind_max - win), min(len(posterior) - 1, ind_max + win))
-        score = posterior[wind].sum()
-        #print(t, ind_max, score, posterior[-1])
-        if score > 0.1:
-            # import matplotlib.pyplot as plt
-            # plt.bar(np.arange(len(posterior)-1), posterior[:-1])
-            # plt.show()
-            ind_final = int(np.average(wind, weights=posterior[wind]))
-            return t, ind_final, posterior
-        # compute stuff for bayes recursion
-        E = create_transition_matrix(deviations[t], params)
-        # Bayes recursion
-        if t == 0:
-            posterior = bayes_recursion(vpr_lhood[t], E, off_map_probs[0],
-                                        posterior, prior_off_classif, initial=True)
-        else:
-            posterior = bayes_recursion(vpr_lhood[t], E, off_map_probs[0],
-                                        posterior, prior_off_classif, initial=False)
-    # TODO: properly handle localization failure (failed to localize before EOS)
-    return False, False, False
+    def converged(self, score_thresh, nhood_size):
+        nhood = np.ones(2 * nhood_size + 1)
+        scores = np.convolve(self.belief[:-1], nhood, mode='same')
+        ind_max = np.argmax(scores)  # nhood with most prob. mass
+        localized = scores[ind_max] > score_thresh
+        return ind_max, localized

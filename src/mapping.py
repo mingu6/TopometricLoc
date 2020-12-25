@@ -7,7 +7,7 @@ import pickle
 import cv2
 import pandas as pd
 
-from data.utils import read_global, load_pose_data, preprocess_local_features
+from data.utils import read_global, load_pose_data, read_local
 from settings import DATA_DIR
 
 
@@ -74,13 +74,12 @@ class RefMap:
         # ground truth poses
         self.gt_poses = gt_poses
 
-    def load_local(self, ind):
+    def load_local(self, ind, num_feats=None):
         """
         loads local descriptors (keypoints, descriptors) from disk
         """
-        with np.load(path.join(DATA_DIR, self.traverse, 'features/local',
-                               str(self.tstamps[ind]) + ".npz")) as f:
-            kp, des = preprocess_local_features(f)
+        kp, des = read_local(self.traverse, self.tstamps[ind],
+                             num_feats=num_feats)
         return kp, des
 
     def load_image(self, ind):

@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='Untitled',
+    name='topometricloc',
     version='0.1.0',
     install_requires=[
         'numpy>=1.18.1',
@@ -10,7 +10,8 @@ setup(
         'tqdm',
         'matplotlib',
         'ipykernel',
-        'PyYAML'
+        'PyYAML',
+        'scikit-learn'
     ],
     package_dir = {'': 'src/'}
 )

@@ -21,7 +21,7 @@ def main(args):
     elif args.net == 'hfnet_tf':
         from hfnet_tf import FeatureNet, default_config
     else:
-        exit('Unknown net %s' % net_name)
+        exit('Unknown net %s' % args.net)
 
     # initialize network and load network weights
     config = default_config

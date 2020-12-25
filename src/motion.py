@@ -36,16 +36,16 @@ def mindist_pt_seg(p, s1, s2):
     return dist
 
 
-def odom_deviation(qOdom, refMap, att_wt):
-    N = refMap.N
-    wd = refMap.width
+def odom_deviation(qOdom, odom_segments, att_wt):
+    N = len(odom_segments)
+    wd = odom_segments.shape[1]
     # extract and reshape start/end segments for odom comparison
-    start_segment = refMap.odom_segments[..., 0, :].reshape(-1, 3)
-    end_segment = refMap.odom_segments[..., 1, :].reshape(-1, 3)
+    start_segment = odom_segments[..., 0, :].reshape(-1, 3)
+    end_segment = odom_segments[..., 1, :].reshape(-1, 3)
     wt_vec = np.array([1., 1., att_wt])  # scale orientation
     # compute odom deviations using segments
     devs = mindist_pt_seg(qOdom * wt_vec, start_segment, end_segment)
-    return devs.reshape(N, wd+1)
+    return devs.reshape(N, wd)
 
 
 def transition_probs(deviations, p_min, p_max, d_min, d_max, theta):
@@ -72,6 +72,8 @@ def transition_probs(deviations, p_min, p_max, d_min, d_max, theta):
     # zero out bottom rows corresponding to source nodes near end, no outflow
     # of probability beyond end node
     within_prob[-wd:, :] = np.fliplr(np.triu(np.fliplr(within_prob[-wd:, :])))
+    if np.any(within_prob.sum(axis=1) == 0.):
+        import pdb; pdb.set_trace()
     within_prob /= within_prob.sum(axis=1)[:, None]
     within_prob *= (1. - off_prob)[:, None]
 

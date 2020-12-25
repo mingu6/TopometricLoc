@@ -23,11 +23,33 @@ def read_global(traverse, tstamps):
     return glb_des
 
 
-def preprocess_local_features(features):
+def read_local(traverse, tstamp, num_feats=None):
+    with np.load(path.join(DATA_DIR, traverse, 'features/local',
+                           str(tstamp) + ".npz")) as f:
+        kp, des = preprocess_local_features(f, num_feats=num_feats)
+    return kp, des
+
+
+def read_local_raw(traverse, tstamp):
+    with np.load(path.join(DATA_DIR, traverse, 'features/local',
+                           str(tstamp) + ".npz")) as f:
+        return dict(f)
+
+
+def preprocess_local_features(features, num_feats=None):
     des = features['local_descriptors'].astype(np.float32)[0]
     kp = features['keypoints'].astype(np.int32)
+    scores = features['scores'].astype(np.float32)
+    # keypoints must sorted according to score
+    assert np.all(np.sort(scores)[::-1] == scores)
     # remove features detected on the car bonnet
     above_bonnet = kp[:, 1] < 800
-    return kp[above_bonnet, :], des[above_bonnet, :]
-
-
+    # filter features for ones detected above car bonnet
+    kp = kp[above_bonnet, :]
+    des = des[above_bonnet, :]
+    scores = scores[above_bonnet]
+    # retain based on num_feats if specified
+    if num_feats is not None:
+        kp = kp[:min(num_feats, len(kp)), :]
+        des = des[:min(num_feats, len(des)), :]
+    return kp, des
