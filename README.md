@@ -53,6 +53,8 @@ Baselines are stored in the `src/baselines/` folder, and scripts include Localiz
 
 Run `src/evaluate.py` to generate results. Script uniformly (spatially) samples the full query traverse as a starting point for global localization and runs each method (ours or comparisons) until convergence. It stores results in `RESULTS_DIR` with a description of the experiment which is automatically generated if none is provided (see --help for more information).
 
+Model parameters for each method are stored in the `src/params/` folder as yaml files.
+
 `src/results.py` aggregates results into tables and outputs them as `.tex` files using pandas. The input to this script is a csv file storing the traverse/method/exper description information about the experiments to be aggregated.
 
 # Other
