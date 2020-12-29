@@ -11,13 +11,14 @@ import yaml
 from data.utils import load_pose_data, read_global, read_local_raw
 from mapping import RefMap
 from settings import DATA_DIR, RESULTS_DIR
+from utils import pose_err
 
 self_dirpath = os.path.dirname(os.path.abspath(__file__))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description=("Build topological map from subsampled traverse data"))
+        description=("Run localization experiments for our method or comparisons"))
     parser.add_argument("-d", "--description", type=str, default="",
                         help="description of model for experiment")
     parser.add_argument("-rt", "--reference-traverse", type=str, default="overcast1",
@@ -62,7 +63,7 @@ if __name__ == "__main__":
     # create description of experiment if not specified
     if not args.description:
         description = \
-            f"{ref_traverse}_{r_fname[:-7]}_{q_traverse}_{q_fname}_{method}"
+            f"{ref_traverse}_{r_fname[:-7]}_{q_traverse}_{q_fname[:-4]}_{method}"
     else:
         description = args.description
     # create new folder to store results
@@ -119,8 +120,9 @@ if __name__ == "__main__":
                 # update state estimate
                 loc.update(odomQ[s-1], query_global[s], qLoc)
             # check convergence
-            ind_max, converged = loc.converged(params['other']['convergence_score'],
-                                               params['other']['convergence_window'])
+            ind_max, converged, _ = loc.converged(
+                params['other']['convergence_score'],
+                params['other']['convergence_window'])
             if converged:
                 break
 
@@ -128,12 +130,7 @@ if __name__ == "__main__":
         if not converged:
             break
         # evaluation against ground truth
-        gt_pose = xyzrpyQ[sInd+t]
-        pred_pose = refMap.gt_poses[ind_max]
-        t_err = np.linalg.norm(gt_pose[:2] - pred_pose[:2])
-        R_err = np.abs(gt_pose[-1] - pred_pose[-1]) * 180. / np.pi
-        if R_err > 180.:
-            R_err = 360. - R_err
+        t_err, R_err = pose_err(xyzrpyQ[sInd+t], refMap.gt_poses[ind_max])
         results.append((i+1, args.trials, dist_from_start[s],
                         dist_from_start[s] - dist_from_start[sInd],
                         t_err, R_err))

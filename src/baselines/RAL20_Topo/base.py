@@ -107,4 +107,4 @@ class Localization:
         belief_nhood = self.belief[nhood_inds]
         localized = belief_nhood.sum() > score_thresh
         ind_pred = round(nhood_inds.mean())
-        return ind_pred, localized
+        return ind_pred, localized, None

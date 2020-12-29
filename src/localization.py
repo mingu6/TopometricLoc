@@ -82,4 +82,4 @@ class Localization:
         scores = np.convolve(self.belief[:-1], nhood, mode='same')
         ind_max = np.argmax(scores)  # nhood with most prob. mass
         localized = scores[ind_max] > score_thresh
-        return ind_max, localized
+        return ind_max, localized, scores

@@ -1,6 +1,8 @@
 import os.path as path
 import numpy as np
+
 import pandas as pd
+import cv2
 
 from settings import DATA_DIR
 
@@ -34,6 +36,12 @@ def read_local_raw(traverse, tstamp):
     with np.load(path.join(DATA_DIR, traverse, 'features/local',
                            str(tstamp) + ".npz")) as f:
         return dict(f)
+
+
+def read_image(traverse, tstamp):
+    img = cv2.imread(path.join(DATA_DIR, traverse,
+                               'images/left', str(tstamp) + '.png'))
+    return img
 
 
 def preprocess_local_features(features, num_feats=None):

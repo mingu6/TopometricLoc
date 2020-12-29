@@ -63,18 +63,17 @@ def geometric_verification(kp1, des1, kp2, des2,
     3D transform can be fitted, where success is defined by a threshold on the
     number of inliers.
     """
-    matches = bf.match(des1, des2)
+    matches = bf.match(des1, des2)  # brute force matching, filter using mutual test
+    # save filtered set of 2d keypoints after matching
     pts1 = []
     pts2 = []
-
     for i,m in enumerate(matches):
         if m:
             pts2.append(kp2[m.trainIdx])
             pts1.append(kp1[m.queryIdx])
-
     pts1 = np.int32(pts1)
     pts2 = np.int32(pts2)
-
+    # use points to find fundamental matrix F
     F, mask = cv2.findFundamentalMat(pts1, pts2, cv2.FM_RANSAC,
                                      inlier_threshold, confidence)
     return mask.sum() >= num_inliers
@@ -85,15 +84,16 @@ def off_map_detection(qLoc, refMap, retrievals,
                       num_inliers, inlier_threshold,
                       confidence):
     qkp, qdes = preprocess_local_features(qLoc, num_feats)
-    # reference local features for verification
+    # identify peak heights and node indices in reference map to run verif. on
     peak_inds = contiguous_peaks(retrievals)
     # enumerate below is to return index with sorted list
     heights = sorted(enumerate(peak_heights(retrievals, peak_inds)),
                      key=lambda x: -x[1][1])[:num_verif]
     verif_inds = [h[1][0] for h in heights]
     temp_inds = np.asarray([h[0] for h in heights])  # indices of peak arr.
+    # load reference local features for verification from disk
     refLoc = [refMap.load_local(ind, num_feats) for ind in verif_inds]
-    # run verification step
+    # run verification step between query and reference(s)
     verif = [geometric_verification(kp, des, qkp, qdes,
                                     num_inliers, inlier_threshold,
                                     confidence) for kp, des in refLoc]

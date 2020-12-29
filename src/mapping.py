@@ -87,7 +87,7 @@ class RefMap:
         loads relevant reference image from disk
         """
         img = cv2.imread(path.join(DATA_DIR, self.traverse,
-                                   'images/left', str(tstamps[ind]) + '.png'))
+                                   'images/left', str(self.tstamps[ind]) + '.png'))
         return img
 
 

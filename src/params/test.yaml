@@ -21,7 +21,7 @@ measurement:
   # geometric verification
   num_feats: 500
   num_inliers: 15
-  inlier_threshold: 2.0
+  inlier_threshold: 1.0
   confidence: 0.99
   num_verif: 2
 other:

@@ -45,4 +45,4 @@ class Localization:
     def converged(self, score_thresh, nhood_size):
         localized = self.verified
         ind_max = self.predict_ind
-        return ind_max, localized
+        return ind_max, localized, None
