@@ -59,4 +59,6 @@ Model parameters for each method are stored in the `src/params/` folder as yaml 
 
 # Other
 
-There is a folder `tests` with notebooks containing exploratory experiments. `tests/off_map_classifier-geom.ipynb` contains test for the off-map detector and allows you to play with parameters and test results on an on-map and off-map segment.
+There is a folder `tests` with notebooks containing exploratory experiments. `tests/off_map_classifier-geom.ipynb` contains a notebook for tuning the off-map detector parameters and allows you to change parameter values and evaluate detector performance on an on-map and off-map segment.
+
+`src/visualization.py` allows you to visualize localization for our method for any traverse. Outputs a multitude of useful diagnostic plots to understand how the state estimate (belief) is being updated, where the state proposals are with confidence scores, sensor data (measurement likelihoods, motion, off-map detector, retrieved images). Very handy for tuning parameters on the training set!
