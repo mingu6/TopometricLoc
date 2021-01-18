@@ -14,6 +14,16 @@ import geometry
 def spatial_subsample(traverse, timestamps, poses, vo_ts, vo,
                       subsample_threshold, attitude_weight,
                       start_ind=0):
+    """
+    VO can be very buggy for some traverses, large glitches where there
+    is a large motion estimate over a very small time interval. Usually,
+    these manifest as large values in the y coordinate in Euler form.
+    This is addressed manually in the function.
+
+    Also, the dusk RTK malfunctions after a particular timestamp partway
+    through the traverse, this is adjusted for manually i.e. stop adding
+    more frames past the timestamp.
+    """
     T1 = geometry.SE3.from_xyzrpy(np.asarray([0, 0, 0, -np.pi, -np.pi, np.pi / 2]))
     poses = poses * T1  # rotates coord frame so fw motion is in the x coord
 
@@ -40,7 +50,9 @@ def spatial_subsample(traverse, timestamps, poses, vo_ts, vo,
             vo_sub.append(vo_accum.to_xyzrpy())
 
             vo_accum = geometry.SE3.from_xyzrpy(np.zeros(6))
-        vo_accum *= vo[i]  # accumulate odometry
+        # remove outliers in VO
+        if np.abs(vo[i].to_xyzrpy()[1]) < 0.2:
+            vo_accum *= vo[i]  # accumulate odometry
         # manually stop dusk subsampling, RTK fails before end of traverse
         if traverse == 'dusk' and vo_ts[i, 1] > 1416587217921391:
             break

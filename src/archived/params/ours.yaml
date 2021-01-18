@@ -1,19 +1,24 @@
 motion:
-  att_wt: 10.
-  p_off_off: 0.6
-  theta: 2.0
-  p_off_min: 0.05
-  p_off_max: 0.5
+  att_wt: 5
+  p_off_off: 0.8
+  theta: 3.0
+  p_off_min: 0.10
+  p_off_max: 0.8
   d_min: 0.1
   d_max: 0.8
 measurement:
-  delta: 3.5
+  k: 30
   pca_dim: 4096
+  # retrieval fn
+  rho: 3.0
+  alpha: 1.0
+  smoothing_window: 5
+  smoothing_bandwidth: 2.
+  verif_multiplier: 1.5
   # noisy off-map detection prob.
-  p_off_off: 0.8
+  p_off_off: 0.7
   p_on_on: 0.6
   # geometric verification
-  window: 10
   num_feats: 500
   num_inliers: 15
   inlier_threshold: 1.0
@@ -21,6 +26,5 @@ measurement:
   num_verif: 2
 other:
   prior_off: 0.20
-  convergence_score: 0.97
+  convergence_score: 0.90
   convergence_window: 6
-  off_map_lb: 0.4

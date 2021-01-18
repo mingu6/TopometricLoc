@@ -21,7 +21,7 @@ def create_transition_matrix(N, lower, upper):
     return mat.tocsc()
 
 
-class Localization:
+class OnlineLocalization:
     def __init__(self, params, refMap):
         # model parameters
         self.motion_params = params["motion"]
@@ -99,12 +99,36 @@ class Localization:
         self.t += 1
         return None
 
-    def converged(self, score_thresh, nhood_size):
+    def converged(self, qGlb, qLoc):
         window = self.other_params['convergence_window']
+        score_thres = self.other_params['convergence_score']
+
+        # take window around posterior mode, check prob. mass underneath
+
         ind_max = np.argmax(self.belief)
         nhood_inds = np.arange(max(ind_max-window, 0),
                                min(ind_max+window, len(self.belief)))
         belief_nhood = self.belief[nhood_inds]
-        localized = belief_nhood.sum() > score_thresh
+        localized = belief_nhood.sum() > score_thres
         ind_pred = round(nhood_inds.mean())
-        return ind_pred, localized, None
+
+        # check that only one mode exists, identify next largest mode
+
+        belief_alt = self.belief[:-1].copy()
+        larger_window = np.arange(max(ind_pred-window*3, 0),
+                                  min(ind_pred+window*3, len(self.belief)-1))
+        belief_alt[larger_window] = 0.
+        ind_max_next = np.argmax(belief_alt)
+        nhood_inds_next = np.arange(max(ind_max_next-window, 0),
+                                    min(ind_max_next+window, len(self.belief)-1))
+        belief_nhood_next = belief_alt[nhood_inds_next]
+
+        # if second mode exists (with meaningful mass), set 0 score so model
+        # does not converge upon computing curves used in results
+
+        score = belief_nhood.sum()
+        if belief_nhood_next.sum() > 0.05:
+            localized = False
+            score = 0.
+
+        return ind_pred, localized, score

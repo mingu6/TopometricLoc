@@ -1,19 +1,10 @@
-motion:
 measurement:
   k: 30
   pca_dim: 4096
-  # retrieval fn
-  rho: 2.0
-  alpha: 1.0
-  smoothing_window: 5
-  smoothing_bandwidth: 2.
-  verif_multiplier: 2.  # note relevant
   # geometric verification
+  window: 10
   num_feats: 500
   num_inliers: 15
   inlier_threshold: 1.0
   confidence: 0.99
   num_verif: 2
-other:
-  convergence_score: 0.1  # not relevant
-  convergence_window: 5  # not relevant

@@ -1,9 +1,0 @@
-motion:
-  lower: -2
-  upper: 10
-measurement:
-  delta: 3
-other:
-  convergence_window: 5
-  convergence_score: 0.7
-  reset_step: 30

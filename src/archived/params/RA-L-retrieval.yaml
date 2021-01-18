@@ -1,0 +1,16 @@
+motion:
+  lower: -2
+  upper: 5
+measurement:
+  delta: 5
+  k: 50
+  pca_dim: 4096
+  # retrieval fn
+  rho: 10.0
+  alpha: 1.0
+  smoothing_window: 5
+  smoothing_bandwidth: 2.
+other:
+  convergence_window: 6
+  convergence_score: 0.9
+  reset_step: 30

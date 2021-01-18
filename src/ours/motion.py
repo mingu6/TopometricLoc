@@ -13,6 +13,10 @@ def pw_prob(d, p_min, p_max, d_min, d_max):
     return off_prob
 
 
+def capped_logistic(x, theta1, theta2, ymin, ymax):
+    return ymin + (ymax - ymin) * 1. / (1. + np.exp(-theta1 * (x - theta2)))
+
+
 def mindist_pt_seg(p, s1, s2):
     """
     Returns the shortest distance between a point and a line segment in R^d.
@@ -29,7 +33,7 @@ def mindist_pt_seg(p, s1, s2):
     seg = s2 - s1
     # find optimal location in line that yields minimum distance
     t = ((p[None, :] - s1) * seg).sum(axis=1)
-    t[t != 0.] /= np.linalg.norm(seg[t != 0.], axis=1)
+    t[t != 0.] /= np.linalg.norm(seg[t != 0.], axis=1) ** 2
     # project to segment
     np.clip(t, 0., 1., out=t)
     dist = np.linalg.norm(t[:, None] * seg + s1 - p[None, :], axis=1)
@@ -44,7 +48,8 @@ def odom_deviation(qOdom, odom_segments, att_wt):
     end_segment = odom_segments[..., 1, :].reshape(-1, 3)
     wt_vec = np.array([1., 1., att_wt])  # scale orientation
     # compute odom deviations using segments
-    devs = mindist_pt_seg(qOdom * wt_vec, start_segment, end_segment)
+    devs = mindist_pt_seg(qOdom * wt_vec, start_segment * wt_vec[None, :],
+                          end_segment * wt_vec[None, :])
     return devs.reshape(N, wd)
 
 
@@ -59,21 +64,9 @@ def transition_probs(deviations, p_min, p_max, d_min, d_max, theta):
 
     min_dev = deviations.min(axis=1)  # least deviation used for off-map prob.
     off_prob = pw_prob(min_dev, p_min, p_max, d_min, d_max)
-    # reweight off-map probabilities for final few nodes since they have
-    # a fewer number of successor nodes, making it more likely to accumulate
-    # probability mass during localization. Weighting involves decreasing
-    # the total on-map probability proportional to the deficiency in
-    # number of successors relative to width
-    off_wts = np.linspace(1., 1. / wd, wd)
-    off_prob[-wd-1:-1] = 1. - (1. - off_prob[-wd-1:-1]) * off_wts
 
     # compute within-map probabilities, rows are source nodes
     within_prob = np.exp(-theta * deviations)
-    # zero out bottom rows corresponding to source nodes near end, no outflow
-    # of probability beyond end node
-    within_prob[-wd:, :] = np.fliplr(np.triu(np.fliplr(within_prob[-wd:, :])))
-    if np.any(within_prob.sum(axis=1) == 0.):
-        import pdb; pdb.set_trace()
     within_prob /= within_prob.sum(axis=1)[:, None]
     within_prob *= (1. - off_prob)[:, None]
 

@@ -29,7 +29,8 @@ def odom_segments(odom, width):
         described above.
     """
     N = len(odom) + 1  # N nodes has N-1 relative poses between
-    # entry i, d of relpose contains relative pose from odom i, i+d for d <= width
+    # entry i, d of relpose contains relative pose from node i, i+d
+    # for d <= width estimated from VO
     # note: last node has no outward connections
     relpose = np.zeros((N, width+2, 3))
     # for each source node/connection compute relative pose
@@ -47,17 +48,19 @@ def odom_segments(odom, width):
     segments[:, 1:, 0, :] = 0.5 * (relpose[:, :-2, :] + relpose[:, 1:-1, :])
     # end segment j^*_+
     segments[:, 1:, 1, :] = 0.5 * (relpose[:, 1:-1, :] + relpose[:, 2:, :])
-    # adjust end-segments for nodes near final node (no successors, use neg predecessor)
+    # adjust end-segments for nodes near final node
+    # (no successors, use neg predecessor)
     for ni in range(N-width, N):
         gap = N - ni - 1
         segments[ni, gap+1, 0, :] = 0.  # relative pose computed beyond end node above
-        segments[ni, gap, 1, :] = 1.5 * relpose[ni, gap, :] - 0.5 * relpose[ni, gap-1, :]
-    # adjust self-transitions (smaller region around source node), successor segment
-    segments[1:, 0, 0, :] = -0.25 * odom  # transition from predecessor (basis change)
-    segments[0, 0, 0, :] = -0.25 * odom[0]  # flip forward transition from root node
-    # predecessor segment
-    segments[:-1, 0, 1, :] = 0.25 * odom  # forward transition just odom
-    segments[-1, 0, 1, :] = 0.25 * odom[-1]  # no successor for last node, use predecessor
+        segments[ni, gap, 1, :] = 1.5 * relpose[ni, gap, :] - \
+            0.5 * relpose[ni, gap-1, :]
+    # self-transition start segment is the origin of the coordinate frame
+    # self-transition end segment is relative pose from interval around
+    # source node
+    segments[1:-1, 0, 1, :] = 0.5 * odom[1:]
+    segments[0, 0, 1, :] = 0.5 * odom[0]
+    segments[-1, 0, 1, :] = 0.5 * odom[-1]
     return segments
 
 
@@ -71,6 +74,7 @@ class RefMap:
         self.tstamps = tstamps
         self.glb_des = read_global(traverse, tstamps)
         self.odom_segments = odom_segments(odom, width)
+        self.odom = odom  # save raw odometry for 3DV comparison
         # ground truth poses
         self.gt_poses = gt_poses
 

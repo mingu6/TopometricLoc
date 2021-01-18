@@ -21,7 +21,7 @@ class Localization:
         # reference map
         self.refMap = refMap
         self.odom_segments = refMap.odom_segments.copy()
-        self.odom_segments[..., -1] *= self.motion_params["att_wt"]
+        #self.odom_segments[..., -1] *= self.motion_params["att_wt"]
 
     def init(self, qOdom, qGlb, qLoc):
         """
@@ -58,6 +58,8 @@ class Localization:
         self.belief[:-1] += (1. - p_off_off) / N * self.belief[-1]
 
         self.belief[-1] = off_new
+        #self.belief[-1] = 0.
+        #self.belief[:-1] /= self.belief[:-1].sum()
         return None
 
     def _update_meas(self, qGlb, qLoc):
@@ -67,6 +69,8 @@ class Localization:
         query_sims = self.refMap.glb_des @ qGlb
         self.belief = measurement_update(self.belief, query_sims, qLoc,
                                          self.refMap, self.meas_params)
+        #self.belief[:-1] /= self.belief[:-1].sum()
+        #self.belief[-1] = 0.
         return None
 
     def update(self, qOdom, qGlb, qLoc):
@@ -81,5 +85,18 @@ class Localization:
         nhood = np.ones(2 * nhood_size + 1)
         scores = np.convolve(self.belief[:-1], nhood, mode='same')
         ind_max = np.argmax(scores)  # nhood with most prob. mass
-        localized = scores[ind_max] > score_thresh
+        localized = scores[ind_max] / (1. - self.belief[-1]) > score_thresh
+        localized = localized and (self.belief[-1] < 0.4)
+
+        # window = self.other_params['convergence_window']
+        # ind_max = np.argmax(self.belief[:-1])
+        # nhood_inds = np.arange(max(ind_max-window, 0),
+                               # min(ind_max+window, len(self.belief)-1))
+        # belief_nhood = self.belief[nhood_inds] / (1. - self.belief[-1])
+        # localized = (belief_nhood.sum() > score_thresh) and (self.belief[-1] < 0.4)
+        # ind_max = round(nhood_inds.mean())
+
+        # scores = np.zeros(self.refMap.N)
+        # scores[ind_max] = belief_nhood.sum()
+        # return ind_max, localized, scores
         return ind_max, localized, scores

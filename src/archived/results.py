@@ -25,13 +25,17 @@ if __name__ == "__main__":
     results = []
 
     for query, method, desc in df_desc_rows:
-        df = pd.read_csv(path.join(RESULTS_DIR, desc, 'results.csv'))
-        # compute precision
-        correct = (df['t_err'] <= args.transl_err) & (df['R_err'] <= args.rot_err)
-        precision = correct.to_numpy().sum() / len(correct)
-        # compute median distance to localize
-        dist_med = df['dist_to_converge'].median()
-        results.append((query, method, precision, dist_med))
+        try:
+            df = pd.read_csv(path.join(RESULTS_DIR, desc, 'results.csv'))
+            # compute precision
+            correct = (df['t_err'] <= args.transl_err) & (df['R_err'] <= args.rot_err)
+            precision = correct.to_numpy().sum() / len(correct)
+            # compute median distance to localize
+            dist_med = df['dist_to_converge'].median()
+            results.append((query, method, precision, dist_med))
+        except FileNotFoundError as e:
+            print(e)
+            continue
 
     # store aggregated results into dataframe
 
@@ -41,6 +45,8 @@ if __name__ == "__main__":
                                         values='Precision') * 100).round(1)
     dist_to_loc_pivot = results_df.pivot(columns='Query', index='Method',
                                          values='Dist. to localize').round(1)
+    print("Precision:\n", precision_pivot, "\n")
+    print("Distance until convergence (m)\n", dist_to_loc_pivot)
     precision_pivot.to_latex(path.join(
         RESULTS_DIR, 'precision_' + args.filename[:-4] + '.tex'), index=True)
     dist_to_loc_pivot.to_latex(path.join(

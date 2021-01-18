@@ -100,10 +100,13 @@ def vis_bayes_update(prior_belief, pred_belief, post_belief, refMap,
 
     # second fig contains belief expressed by place as a 1D plot
 
+    max_bel = max((prior_belief[:-1].max(), pred_belief[:-1].max(),
+                   post_belief[:-1].max()))
     fig1, ax1 = plt.subplots(1, 3, sharey=True, sharex=True)
     ax1[0].plot(prior_belief[:-1])
     ax1[0].set_title(f"Prior belief, off-map bel. {prior_belief[-1]:.2f}")
     ax1[0].set_ylabel("Belief", rotation=90)
+    ax1[0].set_ylim(0., max_bel * 1.1)
     # plot nearest ref. node if query within map
     if tot_err.min() <= 10.:
         ax1[0].scatter([ind_gt], [prior_belief[ind_gt]], color="pink",
@@ -112,6 +115,7 @@ def vis_bayes_update(prior_belief, pred_belief, post_belief, refMap,
     ax1[0].scatter([pred_ind], [prior_belief[pred_ind]], color="blue",
                    label="pred. ref.", s=60)
     ax1[1].plot(pred_belief[:-1])
+    ax1[1].set_ylim(0., max_bel * 1.1)
     ax1[1].set_title(f"Pred. belief (motion), off-map bel. {pred_belief[-1]:.2f}")
     # plot nearest ref. node if query within map
     if tot_err.min() <= 10.:
@@ -121,6 +125,7 @@ def vis_bayes_update(prior_belief, pred_belief, post_belief, refMap,
     ax1[1].scatter([pred_ind], [pred_belief[pred_ind]], color="blue",
                    label="pred. ref.", s=60)
     ax1[2].plot(post_belief[:-1])
+    ax1[2].set_ylim(0., max_bel * 1.1)
     ax1[2].set_title(f"Poster. belief (meas.), off-map bel. {post_belief[-1]:.2f}")
     # plot nearest ref. node if query within map
     if tot_err.min() <= 10.:
@@ -360,7 +365,8 @@ if __name__ == "__main__":
                 other_params['convergence_window'])
             scores_all.append(scores)
             # evaluation against ground truth
-            t_err, R_err = pose_err(xyzrpyQ[sInd+t], refMap.gt_poses[ind_max])
+            t_err, R_err = pose_err(xyzrpyQ[sInd+t], refMap.gt_poses[ind_max],
+                                    degrees=True)
             gt_errs.append((t_err, R_err))
             if converged:
                 break
@@ -368,7 +374,8 @@ if __name__ == "__main__":
         # display sequence info
         steps_to_loc = t
         print(f"Convergence: {t} steps, meters travelled: "
-              f"{dist_from_start[s] - dist_from_start[sInd]:.1f}m")
+              f"{dist_from_start[s] - dist_from_start[sInd]:.1f}m.\n"
+              f"Final t err: {t_err:.1f}m, R err: {R_err:.0f} deg")
 
         while True:
             t_select = input(f"Enter a timestep (0-{steps_to_loc-1}) to visualize "
