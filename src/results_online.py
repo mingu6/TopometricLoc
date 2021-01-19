@@ -11,6 +11,13 @@ from settings import RESULTS_DIR
 
 self_dirpath = os.path.dirname(os.path.abspath(__file__))
 
+colors = {"Ours": "green",
+          "Baseline": "blue",
+          "Xu20": "red",
+          "Stenborg20": "orange"}
+
+linestyle = ["dashed", "solid"]
+
 
 def preprocess_results(results_path):
     """
@@ -115,7 +122,6 @@ def score_at_prec(results, prec_lvl, t_thres, R_thres):
         t_errs, R_errs, dist_from_start = localize_with_score(results, score)
         P = precision_at_tol(t_errs, R_errs, t_thres, R_thres)
         # stop when precision level reached, use score that meets precision level
-        print(score, P, prec_lvl)
         if P <= prec_lvl and prev_score is not None:
             desired_score = prev_score
             break
@@ -143,18 +149,46 @@ def loc_curve_at_prec(results, prec_lvl, t_thres, R_thres, baseline=False):
         scoreP = score_at_prec(results, prec_lvl, t_thres, R_thres)
     else:
         scoreP = 0.
-    print("scoeasadas" + str(scoreP))
     _, _, dist_from_start = localize_with_score(results, scoreP,
                                                 baseline=baseline)
     x = np.sort(dist_from_start)
-    y = 1. - np.linspace(0., 1., len(x))  # empirical cdf
+    y = np.linspace(0., 1., len(x))  # empirical cdf
     return x, y
+
+
+def prec_by_median_dist(results, t_thres, R_thres):
+    """
+    Compute curve where y-axis is precision and x-axis is dist to loc.
+    Args:
+        results: processed results in a list outputted by the
+                 preprocess_results function
+        t_thres: maximum translation error (m) to be deemed successful
+        R_thres: maximum orientation error (deg) to be deemed successful
+    Returns:
+        dist_to_loc: x-axis of graph
+        prec: y-axis of graph
+    """
+    # find unique set of confidence scores, iterate over scores to yield
+    # precision levels for each score
+    all_scores = [result[1] for result in results]
+    # recover maximum convergence score during evaluation run
+    score_thres = min(max(sc) for sc in all_scores)
+    scores = np.linspace(0., score_thres, 100)
+
+    precisions = np.empty(len(scores))
+    dist_to_loc = np.empty(len(scores))
+
+    for i, score in enumerate(scores):
+        t_errs, R_errs, dist_from_start = localize_with_score(results, score)
+        precisions[i] = precision_at_tol(t_errs, R_errs, t_thres, R_thres)
+        dist_to_loc[i] = np.median(dist_from_start)
+    return dist_to_loc, precisions
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description=("Aggregate results for comparison tables"))
-    parser.add_argument("-f", "--filename", type=str, default='results_alloc.csv',
+    parser.add_argument("-f", "--filename", type=str, default='results_online.csv',
                     help="filename containing result descriptions to aggregate")
     parser.add_argument("-t", "--transl-err", type=float, default=5.,
                         help="translational error (m) threshold for success")
@@ -174,26 +208,100 @@ if __name__ == "__main__":
     methods = set(row[1] for row in df_desc_rows)
     queries = set(row[0] for row in df_desc_rows)
 
-    # generate result curve data
-    for prec in args.precision_levels:
-        for query in queries:
-            fig, ax = plt.subplots(1, 1)
-            ax.set_title(f"{query} @ {prec}")
+    # setup figures
+    fig, ax = plt.subplots(1, len(queries))
+
+    ############## First figure, propn localized by x meters ############
+
+    for i, query in enumerate(queries):
+        for j, prec in enumerate(args.precision_levels):
             for method in methods:
-                print("method" + query + method + str(prec))
                 try:
-                    baseline = (method == "Baseline")
                     desc = descs[query+method]
                     results = preprocess_results(path.join(RESULTS_DIR, desc,
-                                                      'results.csv'))
-                    x, y = loc_curve_at_prec(results, prec, args.transl_err,
-                                             args.rot_err, baseline=baseline)
-                    ax.plot(x, y, label=method)
+                                                           'results.csv'))
+                    # baseline method has no variable convergence threshold,
+                    # so do not plot curve and output summary statistics
+                    if method == "Baseline":
+                        t_errs, R_errs, dists_from_start = \
+                            localize_with_score(results, 0., baseline=True)
+                        prec_bl = precision_at_tol(t_errs, R_errs,
+                                                   args.transl_err, args.rot_err)
+                        if j == 0:
+                            print(f"Traverse: {query}, Method: baseline, "
+                                  f"Precision: {prec_bl}, Median dist. to loc.:"
+                                  f" {np.median(dists_from_start):.1f}m")
+                    else:
+                        x, y = loc_curve_at_prec(results, prec, args.transl_err,
+                                                 args.rot_err)
+                        ax[i].plot(x, y, label=f"{method} @ P = {prec}",
+                                   color=colors[method], linewidth=3,
+                                   linestyle=linestyle[j])
+                        ax[i].set_xlim(0., 200.)
                 except FileNotFoundError as e:
                     print(e)
                     continue
-            ax.legend()
-        plt.show()
+            if i == 0:
+                ax[i].set_ylabel("Proportion of Trials Localized", fontsize=12)
+            ax[i].set_xlabel("Distance Travelled (m)", fontsize=12)
+            ax[i].set_title(f"{query}", fontsize=16)
+    ax[-1].legend()
+    # sort legend labels
+    handles, labels = ax[-1].get_legend_handles_labels()
+    # sort both labels and handles by labels
+    labels, handles = zip(*sorted(zip(labels, handles), key=lambda t: t[0]))
+    ax[-1].legend(handles, labels)
+    # resize figures, larger
+    old_fig_size = fig.get_size_inches()
+    fig.set_size_inches(old_fig_size[0] * 3.0, old_fig_size[1] * 1.5)
+    fig.suptitle("RobotCar: Proportion Localized by Distance (m)", fontsize=20)
+    fig.tight_layout()
 
+    plt.savefig(path.join(RESULTS_DIR, f"propn_by_dist_{args.transl_err:.0f}m"
+                          f"_{args.rot_err:.0f}deg.pdf"))
 
-    # plot curves and save
+    ###### Second figure, median distance to localize by precision ######
+
+    fig1, ax1 = plt.subplots(1, len(queries), sharey=True)
+
+    for i, query in enumerate(queries):
+        minx = np.inf
+        for method in methods:
+            try:
+                desc = descs[query+method]
+                results = preprocess_results(path.join(RESULTS_DIR, desc,
+                                                       'results.csv'))
+                # baseline method has no variable convergence threshold,
+                # so do not plot curve and output summary statistics
+                if method != "Baseline":
+                    x, y = prec_by_median_dist(results, args.transl_err,
+                                               args.rot_err)
+                    # truncate x-axis for plotting
+                    if x[-1] < minx:
+                        minx = x[-1]
+                    # plot curves
+                    ax1[i].plot(x, y, label=method, color=colors[method],
+                                linewidth=3)
+            except FileNotFoundError as e:
+                print(e)
+                continue
+        # truncate x-axis for each traverse
+        ax1[i].set_xlim(0., minx)
+        if i == 0:
+            ax1[i].set_ylabel("Precision", fontsize=12)
+        # formatting, titles, labels
+        ax1[i].set_xlabel("Median Distance to Convergence (m)", fontsize=12)
+        ax1[i].set_title(f"{query}", fontsize=16)
+    ax1[-1].legend()
+    # sort legend labels
+    handles, labels = ax1[-1].get_legend_handles_labels()
+    # sort both labels and handles by labels
+    labels, handles = zip(*sorted(zip(labels, handles), key=lambda t: t[0]))
+    ax1[-1].legend(handles, labels)
+    # resize plots (larger)
+    old_fig_size1 = fig1.get_size_inches()
+    fig1.set_size_inches(old_fig_size1[0] * 3.0, old_fig_size1[1] * 1.5)
+    fig1.suptitle("RobotCar: Precision by Median Distance to Converge (m)", fontsize=20)
+    fig1.tight_layout()
+    plt.savefig(path.join(RESULTS_DIR, f"prec_by_dist_{args.transl_err:.0f}m"
+                          f"_{args.rot_err:.0f}deg.pdf"))
