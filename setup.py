@@ -11,7 +11,8 @@ setup(
         'matplotlib',
         'ipykernel',
         'PyYAML',
-        'scikit-learn'
+        'scikit-learn',
+        'openpyxl'
     ],
     package_dir = {'': 'src/'}
 )

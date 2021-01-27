@@ -194,8 +194,6 @@ if __name__ == "__main__":
                         help="translational error (m) threshold for success")
     parser.add_argument("-R", "--rot-err", type=float, default=30.,
                         help="rotational error threshold (deg) for success")
-    parser.add_argument("-P", "--precision-levels", nargs="+", type=float,
-                        default=[0.95, 0.99], help="precision levels to draw curves")
     args = parser.parse_args()
 
     df_desc = pd.read_csv(path.join(self_dirpath, args.filename))
@@ -218,8 +216,8 @@ if __name__ == "__main__":
             for method in methods:
                 try:
                     desc = descs[query+method]
-                    results = preprocess_results(path.join(RESULTS_DIR, desc,
-                                                           'results.csv'))
+                    results = preprocess_results(path.join(RESULTS_DIR, "online",
+                                                           desc, 'results.csv'))
                     # baseline method has no variable convergence threshold,
                     # so do not plot curve and output summary statistics
                     if method == "Baseline":

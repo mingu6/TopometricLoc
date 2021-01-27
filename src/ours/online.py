@@ -30,6 +30,7 @@ class OnlineLocalization:
         """
         Allows for any initialization at time 0 before first motion update
         """
+        # calibrate measurement parameter
         query_sims = self.refMap.glb_des @ qGlb
         dist = np.sqrt(2. - 2. * query_sims)
         descriptor_quantiles = np.quantile(dist, [0.025, 0.975])
@@ -38,9 +39,11 @@ class OnlineLocalization:
             self.lambd = np.log(self.meas_params['delta']) / quantile_range
         else:
             self.lambd = 0.
-        self.belief[:-1] = np.exp(-self.lambd * dist)
-        self.belief[:-1] *= (1. - self.belief[-1]) / self.belief[:-1].sum()
-        return None
+        # perform measurement update using calibrated param
+        self.belief, lhood = measurement_update(self.belief, query_sims, qLoc,
+                                                self.refMap, self.meas_params,
+                                                self.lambd)
+        return lhood
 
     def _update_motion(self, qOdom):
         """
@@ -57,35 +60,36 @@ class OnlineLocalization:
                                        self.motion_params["theta"])
         # prediction step for off-map state
         p_off_off = self.motion_params["p_off_off"]
-        off_new = off.dot(self.belief[:-1]) + self.belief[-1] * p_off_off
         # prediction step for within map states
         N, wd = self.refMap.N, self.refMap.width
         within_transitions = sparse.diags(within.T,
                                           offsets=np.arange(wd+1),
                                           shape=(N, N),
-                                          format="csc",
-                                          dtype=np.float32)
-        self.belief[:-1] = within_transitions.T @ self.belief[:-1]
-        # off to within transition
-        p_off_on = (1. - p_off_off) / N * self.belief[-1]
-        self.belief[:-1] += p_off_on
-        # first few nodes receive extra mass from off-map state because they
-        # have more out connections than in connections. Causes huge decrease
-        # in belief of these states, which affects other states over time
-        self.belief[:wd] += np.flip(np.arange(1, wd+1)) * p_off_on
-        self.belief[:-1] *= (1. - off_new) / self.belief[:-1].sum()
-        self.belief[-1] = off_new
-        return None
+                                          format="csc")
+        within_transitions.resize((N+1, N+1))
+        # transition matrix component for off to within/off probabilities
+        from_off_prob = np.ones(N+1) * (1. - p_off_off) / N
+        from_off_prob[-1] = p_off_off
+        from_off_transitions = sparse.csc_matrix(
+            (from_off_prob, (np.ones(N+1) * N, np.arange(N+1))), shape=(N+1, N+1))
+        # transition matrix component for to off probabilities
+        off += 1. - off - np.asarray(within_transitions.sum(axis=1))[:-1, 0]
+        to_off_transitions = sparse.csc_matrix(
+            (off, (np.arange(N), np.ones(N) * N)), shape=(N+1, N+1))
+        trans_mat = within_transitions + from_off_transitions + to_off_transitions
+        self.belief = trans_mat.T @ self.belief
+
+        return trans_mat
 
     def _update_meas(self, qGlb, qLoc):
         """
         Updates belief using image local and global features.
         """
         query_sims = self.refMap.glb_des @ qGlb
-        self.belief = measurement_update(self.belief, query_sims, qLoc,
-                                         self.refMap, self.meas_params,
-                                         self.lambd)
-        return None
+        self.belief, lhood = measurement_update(self.belief, query_sims, qLoc,
+                                                self.refMap, self.meas_params,
+                                                self.lambd)
+        return lhood
 
     def update(self, qOdom, qGlb, qLoc):
         """

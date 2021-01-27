@@ -1,6 +1,6 @@
 motion:
-  width: 5
-  sigma: 0.5
+  width: 2
+  sigma: 1.0
 measurement:
   sigma: 0.5
 other:

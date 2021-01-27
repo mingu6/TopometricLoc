@@ -143,7 +143,7 @@ if __name__ == "__main__":
 
             # create new folder to store results
 
-            rpath = path.join(RESULTS_DIR)
+            rpath = path.join(RESULTS_DIR, "online")
             os.makedirs(rpath, exist_ok=True)  # create base results folder if required
             trials = [int(p.split("_")[-1]) for p in os.listdir(rpath)
                       if "_".join(p.split("_")[:-1]) == description]

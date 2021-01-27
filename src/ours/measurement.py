@@ -81,24 +81,6 @@ def update_off_prob(off_map_sensor, prior_belief, p_off_off, p_on_on):
     return numer / denom
 
 
-def update_within_map_probs(prior_belief, updated_off_prob, retrievals):
-    """
-    Update posterior probability of within-map states. Requires update of
-    off-map state probability first.
-    Args:
-        prior_belief (N+1 np array): Belief over state after motion prediction step
-        updated_off_prob (float): Probability of off-map state after measurement update
-        retrievals (N np array): Retrieval function output utilizing vpr retrievals
-    Returns:
-        updated within map belief (N np array)
-    """
-    g = 1. + retrievals  # obs. l'hood up to propn. const.
-    updated_lhood = g * prior_belief[:-1]
-    if np.isnan(updated_lhood).any():
-        import pdb; pdb.set_trace()
-    return updated_lhood / updated_lhood.sum() * (1. - updated_off_prob)
-
-
 def measurement_update(prior_belief, query_sims, qLoc, refMap, mment_params,
                        lambd):
     """
@@ -112,20 +94,29 @@ def measurement_update(prior_belief, query_sims, qLoc, refMap, mment_params,
         mment_params (dict): Relevant parameters for measurement model
     Returns:
         updated posterior belief (N + 1 np array)
+        likelihood (N + 1) including implicit off-map likelihood
     """
     dist = np.sqrt(2. - 2. * query_sims)
-    lhood = np.exp(-lambd * (dist - dist.mean()))
+    vpr_lhood = np.exp(-lambd * dist)
     # performs geometric verification for top few peaks in retrievals
     on_detected, _ = off_map_detection(
-        qLoc, refMap, lhood, mment_params['num_feats'], mment_params['window'],
-        mment_params['num_verif'], mment_params['num_inliers'],
-        mment_params['inlier_threshold'], mment_params['confidence']
+        qLoc, refMap, vpr_lhood, mment_params['num_feats'],
+        mment_params['window'], mment_params['num_verif'],
+        mment_params['num_inliers'], mment_params['inlier_threshold'],
+        mment_params['confidence']
     )
+    # if not on_detected:
+        # on_detected = True if np.random.uniform() < 0.7 else False
+    #print(on_detected)
     # off-map prob. update step
     off_new = update_off_prob(not on_detected, prior_belief,
                               mment_params['p_off_off'],
                               mment_params['p_on_on'])
-    # within-map prob. update step
-    within_new = update_within_map_probs(prior_belief, off_new,
-                                         lhood - 1.)
-    return np.hstack((within_new, off_new))
+    # compute implicit likelihood for off-map state
+    off_lhood = off_new / ((1. - off_new) * prior_belief[-1]) * \
+        vpr_lhood @ prior_belief[:-1]
+    lhoods = np.concatenate((vpr_lhood, [off_lhood]))
+    # update belief using lhood
+    updated_belief = lhoods * prior_belief
+    updated_belief /= updated_belief.sum()
+    return updated_belief, lhoods

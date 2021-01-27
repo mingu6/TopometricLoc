@@ -57,6 +57,7 @@ def odom_segments(odom, width):
             relpose[:-w, w] = relpose[:-w, w-1] + odom[w-1:, 0]
     return relpose
 
+
 class OnlineLocalization:
     def __init__(self, params, refMap):
         # model parameters
@@ -91,12 +92,13 @@ class OnlineLocalization:
         """
         query_sims = self.refMap.glb_des @ qGlb
         dist_sq = 2. - 2. * query_sims
+        lhood = np.exp(- dist_sq / (2 * self.sigma_meas ** 2))
         if not uniform:
-            self.belief = np.exp(- dist_sq / (2 * self.sigma_meas ** 2))
+            self.belief = lhood
             self.belief /= self.belief.sum()
         else:
             self.belief = np.ones(self.refMap.N) / self.refMap.N
-        return None
+        return lhood
 
     def _update_motion(self, qOdom):
         """
@@ -105,7 +107,7 @@ class OnlineLocalization:
         E = create_transition_matrix(qOdom, self.odom_segments,
                                      self.sigma_motion)
         self.belief = E.T @ self.belief
-        return None
+        return E
 
     def _update_meas(self, qGlb, qLoc):
         """
@@ -114,11 +116,13 @@ class OnlineLocalization:
         # compute likelihoods (Gaussian lhood)
         query_sims = self.refMap.glb_des @ qGlb
         dist_sq = 2. - 2. * query_sims
-        lhood = np.exp(- (dist_sq - np.median(dist_sq)) /
+        # lhood = np.exp(- (dist_sq - np.median(dist_sq)) /
+                       # (2 * self.sigma_meas ** 2))
+        lhood = np.exp(- (dist_sq) /
                        (2 * self.sigma_meas ** 2))
         self.belief *= lhood
         self.belief /= self.belief.sum()
-        return None
+        return lhood
 
     def update(self, qOdom, qGlb, qLoc):
         """

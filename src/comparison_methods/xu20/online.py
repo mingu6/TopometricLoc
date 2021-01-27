@@ -1,7 +1,6 @@
 import numpy as np
 
 import scipy.sparse as sparse
-from sklearn.preprocessing import normalize
 
 
 def create_transition_matrix(N, lower, upper):
@@ -14,10 +13,9 @@ def create_transition_matrix(N, lower, upper):
         upper: index of furthest relative transition
     """
     assert upper > lower
-    data = np.ones((upper - lower, N))
+    data = np.ones((upper - lower, N)) / (upper - lower)
     mat = sparse.diags(data, offsets=np.arange(lower, upper), shape=(N, N),
                        format="csr", dtype=np.float32)
-    normalize(mat, norm='l1', axis=1, copy=False)
     return mat.tocsc()
 
 
@@ -58,12 +56,13 @@ class OnlineLocalization:
         descriptor_quantiles = np.quantile(dist, [0.025, 0.975])
         quantile_range = descriptor_quantiles[1] - descriptor_quantiles[0]
         self.lambd = np.log(self.delta) / quantile_range
+        lhood = np.exp(-self.lambd * dist)
         if not uniform:
-            self.belief = np.exp(-self.lambd * dist)
+            self.belief = lhood
             self.belief /= self.belief.sum()
         else:
             self.belief = np.ones(self.refMap.N) / self.refMap.N
-        return None
+        return lhood
 
     def _update_motion(self, qOdom):
         """
@@ -82,7 +81,7 @@ class OnlineLocalization:
         lhood = np.exp(-self.lambd * dist)
         self.belief *= lhood
         self.belief /= self.belief.sum()
-        return None
+        return lhood
 
     def update(self, qOdom, qGlb, qLoc):
         """
