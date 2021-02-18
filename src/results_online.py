@@ -12,6 +12,8 @@ from settings import RESULTS_DIR
 self_dirpath = os.path.dirname(os.path.abspath(__file__))
 
 colors = {"Ours": "green",
+          "No Verif": "yellow",
+          "No Off": "purple",
           "Baseline": "blue",
           "Xu20": "red",
           "Stenborg20": "orange"}
@@ -181,7 +183,8 @@ def prec_by_median_dist(results, t_thres, R_thres):
     for i, score in enumerate(scores):
         t_errs, R_errs, dist_from_start = localize_with_score(results, score)
         precisions[i] = precision_at_tol(t_errs, R_errs, t_thres, R_thres)
-        dist_to_loc[i] = np.median(dist_from_start)
+        #dist_to_loc[i] = np.median(dist_from_start)
+        dist_to_loc[i] = np.mean(dist_from_start)
     return dist_to_loc, precisions
 
 
@@ -194,6 +197,9 @@ if __name__ == "__main__":
                         help="translational error (m) threshold for success")
     parser.add_argument("-R", "--rot-err", type=float, default=30.,
                         help="rotational error threshold (deg) for success")
+    parser.add_argument("-p", "--precision-levels", type=float, nargs="+",
+                        default=[0.95, 0.99],
+                        help="precision levels to evaluate results")
     args = parser.parse_args()
 
     df_desc = pd.read_csv(path.join(self_dirpath, args.filename))
@@ -227,15 +233,17 @@ if __name__ == "__main__":
                                                    args.transl_err, args.rot_err)
                         if j == 0:
                             print(f"Traverse: {query}, Method: baseline, "
-                                  f"Precision: {prec_bl}, Median dist. to loc.:"
-                                  f" {np.median(dists_from_start):.1f}m")
+                                  f"Precision: {prec_bl}, Mean dist. to loc.:"
+                                  f" {np.mean(dists_from_start):.1f}m")
                     else:
+                        #import pdb; pdb.set_trace()
                         x, y = loc_curve_at_prec(results, prec, args.transl_err,
                                                  args.rot_err)
                         ax[i].plot(x, y, label=f"{method} @ P = {prec}",
                                    color=colors[method], linewidth=3,
                                    linestyle=linestyle[j])
-                        ax[i].set_xlim(0., 200.)
+                        #ax[i].set_xlim(0., 200.)
+                        #ax[i].set_ylim(0.5, 1.)
                 except FileNotFoundError as e:
                     print(e)
                     continue
@@ -251,7 +259,7 @@ if __name__ == "__main__":
     ax[-1].legend(handles, labels)
     # resize figures, larger
     old_fig_size = fig.get_size_inches()
-    fig.set_size_inches(old_fig_size[0] * 3.0, old_fig_size[1] * 1.5)
+    fig.set_size_inches(old_fig_size[0] * 3.0, old_fig_size[1] * 1.0)
     fig.suptitle("RobotCar: Proportion Localized by Distance (m)", fontsize=20)
     fig.tight_layout()
 
@@ -267,8 +275,8 @@ if __name__ == "__main__":
         for method in methods:
             try:
                 desc = descs[query+method]
-                results = preprocess_results(path.join(RESULTS_DIR, desc,
-                                                       'results.csv'))
+                results = preprocess_results(path.join(RESULTS_DIR, "online",
+                                                       desc, 'results.csv'))
                 # baseline method has no variable convergence threshold,
                 # so do not plot curve and output summary statistics
                 if method != "Baseline":
@@ -284,7 +292,8 @@ if __name__ == "__main__":
                 print(e)
                 continue
         # truncate x-axis for each traverse
-        ax1[i].set_xlim(0., minx)
+        #ax1[i].set_xlim(0., minx)
+        ax1[i].set_ylim(0.7, 1.)
         if i == 0:
             ax1[i].set_ylabel("Precision", fontsize=12)
         # formatting, titles, labels
@@ -298,7 +307,7 @@ if __name__ == "__main__":
     ax1[-1].legend(handles, labels)
     # resize plots (larger)
     old_fig_size1 = fig1.get_size_inches()
-    fig1.set_size_inches(old_fig_size1[0] * 3.0, old_fig_size1[1] * 1.5)
+    fig1.set_size_inches(old_fig_size1[0] * 3.0, old_fig_size1[1] * 1.0)
     fig1.suptitle("RobotCar: Precision by Median Distance to Converge (m)", fontsize=20)
     fig1.tight_layout()
     plt.savefig(path.join(RESULTS_DIR, f"prec_by_dist_{args.transl_err:.0f}m"

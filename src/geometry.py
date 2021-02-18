@@ -2,6 +2,122 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 
+class SE2:
+    def __init__(self, xytheta):
+        self._single = False
+
+        if xytheta.ndim not in [1, 2] or xytheta.shape[-1] != 3:
+            raise ValueError("Expected input containing x, y, theta values "
+                             "to have shape (3,) or (N x 3), "
+                             "got {}.".format(xytheta.shape))
+
+        # If a single (x, y, theta) is given, convert it to a 2D
+        # 1 x 3 matrix but set self._single to True so that we can
+        # return appropriate objects in the `to_...` methods
+        if xytheta.shape == (3,) or len(xytheta) == 1:
+            self._single = True
+        self._xy = np.atleast_2d(xytheta[..., :2])
+
+        # ensure angles are between (-pi, pi]
+        theta = np.atleast_1d(wrapAngle(xytheta[..., 2]))
+        self._theta = theta
+
+        self.len = 1 if self._single else len(xytheta)
+
+    @classmethod
+    def from_vec(cls, xytheta):
+        return cls(xytheta)
+
+    @classmethod
+    def from_list(cls, SE2list):
+        xytheta = np.vstack([np.hstack((s._xy, s._theta[:, None]))
+                             for s in SE2list])
+        return cls(xytheta)
+
+    def __getitem__(self, indexer):
+        xytheta = np.hstack((self._xy[indexer], self._theta[indexer, None]))
+        return self.__class__(xytheta)
+
+    def __len__(self):
+        return self.len
+
+    def __mul__(self, other):
+        """
+        Performs element-wise pose composition.
+        """
+        if not(len(self) == 1 or len(other) == 1 or
+               len(self) == len(other)):
+            raise ValueError("Expected equal number of transformations in "
+                             "both or a single transformation in either "
+                             "object, got {} transformations in first and "
+                             "{} transformations in second object.".format(
+                                len(self), len(other)))
+
+        otherx = other._xy[:, 0]
+        othery = other._xy[:, 1]
+
+        ctheta = np.cos(self._theta)
+        stheta = np.sin(self._theta)
+        newx = ctheta * otherx - stheta * othery + self._xy[:, 0]
+        newy = stheta * otherx + ctheta * othery + self._xy[:, 1]
+        xythetanew = np.vstack((newx, newy, self._theta + other._theta)).T
+
+        return self.__class__(xythetanew)
+
+    def __truediv__(self, other):
+        """
+        Computes relative pose, similar to MATLAB convention
+        (x = A \ b for Ax = b). Example: T1 / T2 = T1.inv() * T2
+        Derivation: Do it yourself mate, simple algebra
+        """
+        if not(len(self) == 1 or len(other) == 1 or
+               len(self) == len(other)):
+            raise ValueError("Expected equal number of transformations in "
+                             "both or a single transformation in either "
+                             "object, got {} transformations in first and "
+                             "{} transformations in second object.".format(
+                                len(self), len(other)))
+
+        otherx = other._xy[:, 0]
+        othery = other._xy[:, 1]
+
+        cthetainv = np.cos(-self._theta)
+        sthetainv = np.sin(-self._theta)
+        newx = cthetainv * (otherx - self._xy[:, 0]) - \
+            sthetainv * (othery - self._xy[:, 1])
+        newy = sthetainv * (otherx - self._xy[:, 0]) + \
+            cthetainv * (othery - self._xy[:, 1])
+        xythetanew = np.vstack((newx, newy, other._theta - self._theta)).T
+
+        return self.__class__(xythetanew)
+
+    def inv(self):
+        """
+        Inverts transformation. Derivation: Use definition of inverse
+        followed by basic matrix algebra.
+        """
+        x = self._xy[:, 0]
+        y = self._xy[:, 1]
+        thetainv = - self._theta
+
+        # intermediate calcs for inversion
+
+        cinv = np.cos(thetainv)
+        sinv = np.sin(thetainv)
+
+        xythetainv = np.vstack((-cinv * x + sinv * y, - sinv * x -
+                                cinv * y, thetainv)).T  # computed inverse
+
+        return self.__class__(xythetainv)
+
+    def to_vec(self):
+        return np.squeeze(np.hstack((self._xy,
+                                     np.atleast_2d(self._theta).T)))
+
+    def magnitude(self):
+        return np.linalg.norm(self._xy, axis=-1), np.abs(self._theta)
+
+
 class SE3:
     def __init__(self, t, R):
         self._single = False
@@ -95,11 +211,14 @@ class SE3:
     def to_xyzrpy(self):
         return np.concatenate((self.t(), np.squeeze(self.R().as_euler('xyz'))), axis=-1)
 
+    def to_xyzypr(self):
+        return np.concatenate((self.t(), np.squeeze(self.R().as_euler('zyx'))), axis=-1)
+
     def magnitude(self):
         return np.linalg.norm(self.t(), axis=-1), self.R().magnitude()
 
 
-def average(poses, weights=None):
+def averageSE3(poses, weights=None):
     if weights is None:
         weights = np.ones(len(poses))
     assert np.all(weights >= 0)
@@ -108,7 +227,7 @@ def average(poses, weights=None):
     return SE3(avg_t, avg_R)
 
 
-def metric(p1, p2, w):
+def metricSE3(p1, p2, w):
     """
     Computes metric on the cartesian product space representation of SE(3).
     Args:
@@ -127,10 +246,10 @@ def metric(p1, p2, w):
     p_rel = p1 / p2
     t_dist = np.linalg.norm(p_rel.t(), axis=-1)
     R_dist = p_rel.R().magnitude()
-    return t_dist + w * R_dist 
+    return t_dist + w * R_dist
 
 
-def error(p1, p2):
+def errorSE3(p1, p2):
     if not(len(p1) == 1 or len(p2) == 1 or len(p1) == len(p2)):
         raise ValueError("Expected equal number of transformations in both "
                             "or a single transformation in either object, "
@@ -141,7 +260,7 @@ def error(p1, p2):
     return p_rel.magnitude()
 
 
-def combine(listOfPoses):
+def combineSE3(listOfPoses):
     tList = []
     qList = []
     for pose in listOfPoses:
@@ -232,3 +351,13 @@ def hatOp(vec):
     else:
         mat = mat - mat.transpose()
     return mat
+
+
+def wrapAngle(angles):
+    """
+    Wrap set of angles to [-pi, pi)
+    """
+    angles = (angles + np.pi) % (2 * np.pi)
+    angles = np.atleast_1d(angles)
+    angles[angles < 0.] += 2. * np.pi
+    return np.squeeze(angles - np.pi)

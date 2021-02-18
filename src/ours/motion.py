@@ -1,73 +1,70 @@
 import numpy as np
+from scipy.stats import chi2
 import scipy.sparse as sparse
 from scipy.sparse import csc_matrix, coo_matrix
 from sklearn.preprocessing import normalize
 
 
-def pw_prob(d, p_min, p_max, d_min, d_max):
-    off_prob = np.empty_like(d)
-    off_prob[d <= d_min] = p_min
-    lin_mask = np.logical_and(d >= d_min, d <= d_max)
-    off_prob[lin_mask] = p_min + (d[lin_mask] - d_min) * (p_max - p_min) / (d_max - d_min)
-    off_prob[d > d_max] = p_max
-    return off_prob
-
-
-def capped_logistic(x, theta1, theta2, ymin, ymax):
-    return ymin + (ymax - ymin) * 1. / (1. + np.exp(-theta1 * (x - theta2)))
-
-
-def mindist_pt_seg(p, s1, s2):
+def min_MN_dist_seg(mu, Sigma, segl, segu):
     """
-    Returns the shortest distance between a point and a line segment in R^d.
-    Input:
-        p: point (Nxd)
-        s1: starting point of segment (Nxd)
-        s2: endpoint of segment (Nxd)
-    Output:
-        dist: minimum distances between point and line segment (Nx1)
+    Minimum Mahalanobis distance of points lying on a line segment encoded
+    by the lower and upper segment points (segl, segu) for Gaussian of
+    mean mu and covariance Sigma.
+    Args:
+        mu: len d mean vector
+        Sigma: dxd covariance matrix
+        segl: Nxd segment start points
+        segu: Nxd segment end points
+    Returns:
+        sqmndist: len N vector containing minimum sq MN dist to segments
+
+    NOTE:
+        t \in [0, 1] is the location within the segment where MN is minimized
+        given by:
+
+        t = ((segl - mu)^T Sigma^-1 (selu - segl)) /
+                    ((segu - segl)^T Sigma^-1 (segu - segl))
+        and subsequently restricted between 0 and 1
     """
-    assert s1.ndim == 2
-    assert s1.shape == s2.shape
-    assert len(p) == s1.shape[1]
-    seg = s2 - s1
-    # find optimal location in line that yields minimum distance
-    t = ((p[None, :] - s1) * seg).sum(axis=1)
-    t[t != 0.] /= np.linalg.norm(seg[t != 0.], axis=1) ** 2
-    # project to segment
-    np.clip(t, 0., 1., out=t)
-    dist = np.linalg.norm(t[:, None] * seg + s1 - p[None, :], axis=1)
-    return dist
+    Sigmainv = np.linalg.inv(Sigma)
+    segdiff = (segu - segl)
+    segdifftransf = segdiff @ Sigmainv
+
+    # interpolation point for each segment
+
+    denom = (segdifftransf * segdiff).sum(axis=1)
+    t = ((mu[None, :] - segl) * segdifftransf).sum(axis=1)
+    t[denom != 0.] /= denom[denom != 0.]
+    t = np.clip(t, 0., 1.)[:, None]
+
+    # compute optimal point and distance
+
+    opt_pt = segu * t + (1. - t) * segl
+    diff = mu - opt_pt
+    sqmndist = ((diff @ Sigmainv) * diff).sum(axis=1)
+
+    return sqmndist
 
 
-def odom_deviation(qOdom, odom_segments, att_wt):
-    N = len(odom_segments)
-    wd = odom_segments.shape[1]
-    # extract and reshape start/end segments for odom comparison
-    start_segment = odom_segments[..., 0, :].reshape(-1, 3)
-    end_segment = odom_segments[..., 1, :].reshape(-1, 3)
-    wt_vec = np.array([1., 1., att_wt])  # scale orientation
-    # compute odom deviations using segments
-    devs = mindist_pt_seg(qOdom * wt_vec, start_segment * wt_vec[None, :],
-                          end_segment * wt_vec[None, :])
-    return devs.reshape(N, wd)
-
-
-def transition_probs(deviations, p_min, p_max, d_min, d_max, theta):
+def transition_probs(qmu, qSigma, refMap, p_off_max):
     """
-    Creates transition probabilities for prediction step given odometric
-    deviations computed from "odom_deviation" function.
+    Transition probabilities between within map nodes and also from map
+    node to off-map state.
     """
-    N, wd = deviations.shape
-
-    # compute off-map transition probabilities
-
-    min_dev = deviations.min(axis=1)  # least deviation used for off-map prob.
-    off_prob = pw_prob(min_dev, p_min, p_max, d_min, d_max)
-
-    # compute within-map probabilities, rows are source nodes
-    within_prob = np.exp(-theta * deviations)
-    within_prob /= within_prob.sum(axis=1)[:, None]
-    within_prob *= (1. - off_prob)[:, None]
-
+    N = refMap.N
+    wd = refMap.width
+    # compute minimum MH distance between query and segments
+    segl = refMap.odom_segments[..., 0, :].reshape(-1, 3)
+    segu = refMap.odom_segments[..., 1, :].reshape(-1, 3)
+    sqdis = min_MN_dist_seg(qmu, qSigma, segl, segu).reshape(N, wd+1)
+    sqdis = np.clip(sqdis, 0., 9.)
+    # compute relative likelihoods odomd for transition probabilities
+    # to within map nodes
+    qlhood = np.exp(-0.5 * sqdis)
+    qlhood /= qlhood.sum(axis=1)[:, None]
+    # apply chisq cdf to compute within map prob. Evaluating cdf is same as
+    # prob sqmndist <= x. Intuitively, P(sqMN <= x) gives an indication of
+    # off-map likelihood between 0, 1
+    off_prob = (chi2.cdf(sqdis, 3) * p_off_max * qlhood).sum(axis=1)
+    within_prob = qlhood * (1. - off_prob)[:, None]
     return within_prob, off_prob

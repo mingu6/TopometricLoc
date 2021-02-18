@@ -73,7 +73,7 @@ if __name__ == "__main__":
                         help="reference traverse name, e.g. overcast, night")
     parser.add_argument("-qt", "--query-traverse", type=str,
                         default="sun_clouds_detour2",
-                        choices=["sun_clouds_detour2", "night"],
+                        choices=["sun_clouds_detour2", "night", "overcast_detour2"],
                         help="query traverse name, e.g. dusk, night")
     parser.add_argument("-rf", "--reference-filename", type=str,
                         default='t_1_w_10_wd_2.pickle',

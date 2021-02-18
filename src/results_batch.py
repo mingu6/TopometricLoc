@@ -95,8 +95,8 @@ if __name__ == "__main__":
                 continue
 
     df = pd.DataFrame(rows, columns=['Trial', 'Query', 'Method', 'Precision'])
-    agg_pivot = pd.pivot_table(df, values="Precision", index=["Query"],
-                               columns=["Method"], aggfunc=np.mean).round(1)
+    agg_pivot = pd.pivot_table(df, values="Precision", index=["Method"],
+                               columns=["Query"], aggfunc=np.mean).round(1)
 
     # print detailed results log if verbose
 

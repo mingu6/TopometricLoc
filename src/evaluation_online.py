@@ -16,6 +16,14 @@ from utils import pose_err
 
 self_dirpath = os.path.dirname(os.path.abspath(__file__))
 
+convergence_max = {
+    'night': 0.995,
+    'dusk': 0.94,
+    'sun_clouds_detour2': 0.99,
+    'rain_detour': 0.99,
+    'sun_clouds_detour1': 0.99
+}
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -36,8 +44,8 @@ if __name__ == "__main__":
     parser.add_argument("-t", "--trials", type=int, default=1000,
                         help="number of trials to run, evenly distributed")
     parser.add_argument("-m", "--methods", nargs="+", type=str,
-                        choices=["ours", "xu20", "stenborg20", "baseline"],
-                        default=["ours", "xu20", "stenborg20", "baseline"])
+                        choices=["ours", "xu20", "stenborg20", "baseline", "noverif", "nooff"],
+                        default=["ours", "xu20", "stenborg20", "baseline", "noverif", "nooff"])
     args = parser.parse_args()
 
     ref_traverse = args.reference_traverse
@@ -54,7 +62,7 @@ if __name__ == "__main__":
     for query in pbarq:
         pbarq.set_description(query)
         # load query sequence
-        tstampsQ, xyzrpyQ, odomQ = load_pose_data(query, q_fname)
+        tstampsQ, xyzrpyQ, muQ, SigmaQ = load_pose_data(query, q_fname)
         query_global = read_global(query, tstampsQ)
         # compute distance travelled (meters) from starting location
         # for all query images in sequence
@@ -72,7 +80,7 @@ if __name__ == "__main__":
 
             # for each method (ours/comparisons), import assoc. module
 
-            if method == "ours":
+            if method in ["ours", "noverif", "nooff"]:
                 from ours.online import OnlineLocalization
             else:
                 online = importlib.import_module(
@@ -84,13 +92,16 @@ if __name__ == "__main__":
             if args.params:
                 params_file = args.params
             else:
-                params_file = method + ".yaml"
+                param_fname = "ours" if method in ['noverif', 'nooff'] else method
+                params_file = param_fname + ".yaml"
 
             # read in parameters
 
             params_path = path.abspath(path.join(self_dirpath, "params"))
             with open(path.join(params_path, params_file), 'r') as f:
                 params = yaml.safe_load(f)
+            if method in ["ours", "noverif", "nooff"]:
+                params['other']['convergence_score'] = convergence_max[query]
 
             # create description of experiment if not specified
 
@@ -107,18 +118,32 @@ if __name__ == "__main__":
                                           leave=False)):
                 trial_results = []
                 # setup localization object
-                loc = OnlineLocalization(params, refMap)
+                if method != 'nooff':
+                    loc = OnlineLocalization(params, refMap)
+                else:
+                    loc = OnlineLocalization(params, refMap, nooff=True)
 
-                for t, s in enumerate(range(sInd, len(odomQ))):
+                for t, s in enumerate(range(sInd, len(muQ))):
                     qLoc = read_local_raw(query, tstampsQ[s])
                     qGlb = query_global[s]
+                    odomQ = (muQ[s], SigmaQ[s])
                     # usually at t=0 there is a meas. update with no motion
                     # separate initialization performed
                     if t == 0:
-                        loc.init(odomQ[s], qGlb, qLoc)
+                        if method == 'noverif':
+                            loc.init(odomQ, qGlb, qLoc, noverif=True)
+                        elif method == 'nooff':
+                            loc.init(odomQ, qGlb, qLoc, nooff=True)
+                        else:
+                            loc.init(odomQ, qGlb, qLoc)
                     else:
                         # update state estimate
-                        loc.update(odomQ[s-1], query_global[s], qLoc)
+                        if method == 'noverif':
+                            loc.update(odomQ, qGlb, qLoc, noverif=True)
+                        elif method == 'nooff':
+                            loc.update(odomQ, qGlb, qLoc, nooff=True)
+                        else:
+                            loc.update(odomQ, qGlb, qLoc)
                     # check convergence
                     ind_max, converged, score = loc.converged(qGlb, qLoc)
                     # evaluation against ground truth

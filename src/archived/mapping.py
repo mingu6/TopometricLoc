@@ -9,7 +9,6 @@ import pandas as pd
 
 from data.utils import read_global, load_pose_data, read_local
 from settings import DATA_DIR
-from geometry import SE2
 
 
 def odom_segments(odom, width):
@@ -29,17 +28,19 @@ def odom_segments(odom, width):
         segments: N x width x 2 x 3 np array with relative pose segments as
         described above.
     """
-    N = len(odom)  # odom entry i relates to relpose from i-1 to i
+    N = len(odom) + 1  # N nodes has N-1 relative poses between
     # entry i, d of relpose contains relative pose from node i, i+d
     # for d <= width estimated from VO
     # note: last node has no outward connections
     relpose = np.zeros((N, width+2, 3))
     # for each source node/connection compute relative pose
     # include one node more than width for endpoint for furthest transition
-    agg_trans = SE2(np.zeros((N, 3)))
-    for w in range(1, width+2):  # self-transition has 0 relative pose
-        agg_trans = agg_trans[:-1] * SE2(odom[w:])
-        relpose[:-w, w, :] = agg_trans.to_vec()
+    for w in range(width+2):
+        if w == 1:
+            # relative pose given by raw odom (1 node away transition)
+            relpose[:-1, w] = odom
+        elif w > 1:
+            relpose[:-w, w] = relpose[:-w, w-1] + odom[w-1:]
 
     # compute start/end segments for non-self transitions
     segments = np.zeros((N, width+1, 2, 3))
@@ -57,8 +58,8 @@ def odom_segments(odom, width):
     # self-transition start segment is the origin of the coordinate frame
     # self-transition end segment is relative pose from interval around
     # source node
-    segments[1:-1, 0, 1, :] = 0.5 * odom[2:]
-    segments[0, 0, 1, :] = 0.5 * odom[1]
+    segments[1:-1, 0, 1, :] = 0.5 * odom[1:]
+    segments[0, 0, 1, :] = 0.5 * odom[0]
     segments[-1, 0, 1, :] = 0.5 * odom[-1]
     return segments
 
@@ -90,8 +91,7 @@ class RefMap:
         loads relevant reference image from disk
         """
         img = cv2.imread(path.join(DATA_DIR, self.traverse,
-                                   'images/left',
-                                   str(self.tstamps[ind]) + '.png'))
+                                   'images/left', str(self.tstamps[ind]) + '.png'))
         return img
 
 
@@ -102,16 +102,16 @@ if __name__ == "__main__":
                         help="traverse name, e.g. overcast, night")
     parser.add_argument("-f", "--filename", type=str, required=True,
                     help="filename containing subsampled traverse poses")
-    parser.add_argument("-w", "--width", type=int, default=4,
-                    help=("maximum distance for possible transition between nodes"))
+    parser.add_argument("-w", "--width", type=int, default=3,
+        help=("maximum distance for possible transition between nodes"))
     args = parser.parse_args()
 
     traverse = args.traverse
     fname = args.filename
 
     # read reference map node data
-    tstamps, gt, vo = load_pose_data(traverse, fname)
-    refMap = RefMap(traverse, tstamps, vo, width=args.width, gt_poses=gt)
+    tstamps, xyzrpy, vo = load_pose_data(traverse, fname)
+    refMap = RefMap(traverse, tstamps, vo, width=args.width, gt_poses=xyzrpy)
 
     # save map
     map_dir = path.join(DATA_DIR, traverse, 'saved_maps')

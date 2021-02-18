@@ -7,8 +7,8 @@ import pickle
 import yaml
 
 from data.utils import load_pose_data, read_global, read_local
-from mapping import RefMap
-from localization import Localization
+from archived.mapping import RefMap
+from ours.online import OnlineLocalization
 from settings import DATA_DIR, RESULTS_DIR
 
 self_dirpath = os.path.dirname(os.path.abspath(__file__))
@@ -34,7 +34,7 @@ features = net.infer(img)
 # motion timing code
 
 setup_motion = '''
-from localization import Localization
+from ours.online import OnlineLocalization
 import numpy as np
 from __main__ import loc, odomQ
 i = np.random.randint(0, len(odomQ))
@@ -60,7 +60,7 @@ query_sims = refMap.glb_des @ query_global[i]
 
 setup_retrieve = '''
 import numpy as np
-from measurement import retrieval_fn
+from archived.measurement import retrieval_fn
 from __main__ import query_global, refMap, params
 i = np.random.randint(0, len(query_global))
 query_sims = refMap.glb_des @ query_global[i]
@@ -68,8 +68,8 @@ meas = params['measurement']
 '''
 
 test_retrieve = '''
-retrievals = retrieval_fn(query_sims, meas['k'], meas['smoothing_window'],
-meas['smoothing_bandwidth'], meas['rho'], meas['alpha'])
+retrievals = retrieval_fn(query_sims, 30, 5,
+2., 3., 1.)
 '''
 
 # measurement (verification) timing code
@@ -77,7 +77,7 @@ meas['smoothing_bandwidth'], meas['rho'], meas['alpha'])
 setup_verif = '''
 import numpy as np
 from data.utils import read_local
-from measurement import geometric_verification, retrieval_fn, contiguous_peaks, peak_heights
+from archived.measurement import geometric_verification, retrieval_fn, contiguous_peaks, peak_heights
 from __main__ import query_global, refMap, params, q_traverse, tstampsQ
 i = np.random.randint(0, len(query_global))
 
@@ -85,8 +85,7 @@ query_sims = refMap.glb_des @ query_global[i]
 meas = params['measurement']
 num_feats = meas['num_feats']
 
-retrievals = retrieval_fn(query_sims, meas['k'], meas['smoothing_window'],
-meas['smoothing_bandwidth'], meas['rho'], meas['alpha'])
+retrievals = retrieval_fn(query_sims, 30, 5, 2., 3., 1.0)
 peak_inds = contiguous_peaks(retrievals)
 heights = sorted(enumerate(peak_heights(retrievals, peak_inds)),
                  key=lambda x: -x[1][1])[:meas['num_verif']]
@@ -98,7 +97,6 @@ qkp, qdes = read_local(q_traverse, tstampsQ[i], num_feats=num_feats)
 inlier_threshold = meas['inlier_threshold']
 num_inliers = meas['num_inliers']
 confidence = meas['confidence']
-verif_multiplier = meas['verif_multiplier']
 '''
 
 test_verif = '''
@@ -111,9 +109,6 @@ try:
     success_ind = verif_inds[next(i for i, v in enumerate(verif) if v)]
 except StopIteration:
     success_ind = None
-# for successful verification, increase lhood of peak in retrievals
-for inds in peak_inds[temp_inds[verif], :]:
-    retrievals[inds[0]:inds[1]] *= verif_multiplier
 '''
 
 if __name__ == "__main__":
@@ -157,7 +152,7 @@ if __name__ == "__main__":
     tstampsQ, xyzrpyQ, odomQ = load_pose_data(q_traverse, q_fname)
     query_global = read_global(q_traverse, tstampsQ)
 
-    loc = Localization(params, refMap)
+    loc = OnlineLocalization(params, refMap)
 
     # time for feature extraction
     num_feature = 1000

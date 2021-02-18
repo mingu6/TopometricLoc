@@ -103,31 +103,37 @@ class OnlineLocalization:
         score_thres = self.other_params['convergence_score']
 
         # take window around posterior mode, check prob. mass underneath
-
+        sum_belief = np.convolve(self.belief, np.ones(2 * window + 1),
+                                 mode='same')
+        ind_max = np.argmax(sum_belief)
         ind_max = np.argmax(self.belief)
-        nhood_inds = np.arange(max(ind_max-window, 0),
-                               min(ind_max+window, len(self.belief)))
-        belief_nhood = self.belief[nhood_inds]
-        localized = belief_nhood.sum() > score_thres
-        ind_pred = round(nhood_inds.mean())
+        score = sum_belief[ind_max]
+        localized = score > score_thres
 
-        # check that only one mode exists, identify next largest mode
+        # ind_max = np.argmax(self.belief)
+        # nhood_inds = np.arange(max(ind_max-window, 0),
+                               # min(ind_max+window, len(self.belief)))
+        # belief_nhood = self.belief[nhood_inds]
+        # localized = belief_nhood.sum() > score_thres
+        # ind_pred = round(nhood_inds.mean())
 
-        belief_alt = self.belief[:-1].copy()
-        larger_window = np.arange(max(ind_pred-window*3, 0),
-                                  min(ind_pred+window*3, len(self.belief)-1))
-        belief_alt[larger_window] = 0.
-        ind_max_next = np.argmax(belief_alt)
-        nhood_inds_next = np.arange(max(ind_max_next-window, 0),
-                                    min(ind_max_next+window, len(self.belief)-1))
-        belief_nhood_next = belief_alt[nhood_inds_next]
+        # # check that only one mode exists, identify next largest mode
 
-        # if second mode exists (with meaningful mass), set 0 score so model
-        # does not converge upon computing curves used in results
+        # belief_alt = self.belief[:-1].copy()
+        # larger_window = np.arange(max(ind_pred-window*3, 0),
+                                  # min(ind_pred+window*3, len(self.belief)-1))
+        # belief_alt[larger_window] = 0.
+        # ind_max_next = np.argmax(belief_alt)
+        # nhood_inds_next = np.arange(max(ind_max_next-window, 0),
+                                    # min(ind_max_next+window, len(self.belief)-1))
+        # belief_nhood_next = belief_alt[nhood_inds_next]
 
-        score = belief_nhood.sum()
-        if belief_nhood_next.sum() > 0.05:
-            localized = False
-            score = 0.
+        # # if second mode exists (with meaningful mass), set 0 score so model
+        # # does not converge upon computing curves used in results
 
-        return ind_pred, localized, score
+        # score = belief_nhood.sum()
+        # if belief_nhood_next.sum() > 0.05:
+            # localized = False
+            # score = 0.
+
+        return ind_max, localized, score

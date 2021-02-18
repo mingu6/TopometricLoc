@@ -5,6 +5,8 @@ from sklearn.preprocessing import normalize
 
 import matplotlib.pyplot as plt
 
+from geometry import SE2
+
 
 def create_transition_matrix(qOdom, odom_segments, sigma):
     """
@@ -43,18 +45,16 @@ def odom_segments(odom, width):
         segments: N x width np array with relative pose segments as
         described above.
     """
-    N = len(odom) + 1  # N nodes has N-1 relative poses between
+    N = len(odom)  # N nodes has N-1 relative poses between
     # entry i, d of relpose contains relative pose from node i, i+d
     # for d <= width estimated from VO
     # note: last node has no outward connections
     relpose = np.zeros((N, width+1))
     # for each source node/connection compute relative pose
-    for w in range(width+1):
-        if w == 1:
-            # relative pose given by raw odom (1 node away transition)
-            relpose[:-1, w] = odom[:, 0]
-        elif w > 1:
-            relpose[:-w, w] = relpose[:-w, w-1] + odom[w-1:, 0]
+    agg_trans = SE2(np.zeros((N, 3)))
+    for w in range(1, width+1):
+        agg_trans = agg_trans[:-1] * SE2(odom[w:])
+        relpose[:-w, w] = agg_trans.to_vec()[:, 0]
     return relpose
 
 
@@ -104,7 +104,7 @@ class OnlineLocalization:
         """
         Applies motion update to belief.
         """
-        E = create_transition_matrix(qOdom, self.odom_segments,
+        E = create_transition_matrix(qOdom[0], self.odom_segments,
                                      self.sigma_motion)
         self.belief = E.T @ self.belief
         return E
@@ -145,29 +145,36 @@ class OnlineLocalization:
 
         # take window around posterior mode, check prob. mass underneath
 
+        sum_belief = np.convolve(self.belief, np.ones(2 * window + 1),
+                                 mode='same')
+        ind_max = np.argmax(sum_belief)
         ind_max = np.argmax(self.belief)
-        nhood_inds = np.arange(max(ind_max-window, 0),
-                               min(ind_max+window, len(self.belief)))
-        belief_nhood = self.belief[nhood_inds]
-        localized = belief_nhood.sum() > score_thres
-        ind_pred = round(nhood_inds.mean())
-        score = belief_nhood.sum()
+        score = sum_belief[ind_max]
+        localized = score > score_thres
 
-        # check that only one mode exists, identify next largest mode
+        # ind_max = np.argmax(self.belief)
+        # nhood_inds = np.arange(max(ind_max-window, 0),
+                               # min(ind_max+window, len(self.belief)))
+        # belief_nhood = self.belief[nhood_inds]
+        # localized = belief_nhood.sum() > score_thres
+        # ind_pred = round(nhood_inds.mean())
+        # score = belief_nhood.sum()
 
-        belief_alt = self.belief[:-1].copy()
-        larger_window = np.arange(max(ind_pred-window*3, 0),
-                                  min(ind_pred+window*3, len(self.belief)-1))
-        belief_alt[larger_window] = 0.
-        ind_max_next = np.argmax(belief_alt)
-        nhood_inds_next = np.arange(max(ind_max_next-window, 0),
-                                    min(ind_max_next+window, len(self.belief)-1))
-        belief_nhood_next = belief_alt[nhood_inds_next]
+        # # check that only one mode exists, identify next largest mode
 
-        # if second mode exists (with meaningful mass), set 0 score so model
-        # does not converge upon computing curves used in results
+        # belief_alt = self.belief[:-1].copy()
+        # larger_window = np.arange(max(ind_pred-window*3, 0),
+                                  # min(ind_pred+window*3, len(self.belief)-1))
+        # belief_alt[larger_window] = 0.
+        # ind_max_next = np.argmax(belief_alt)
+        # nhood_inds_next = np.arange(max(ind_max_next-window, 0),
+                                    # min(ind_max_next+window, len(self.belief)-1))
+        # belief_nhood_next = belief_alt[nhood_inds_next]
 
-        if belief_nhood_next.sum() > 0.05:
-            localized = False
-            score = 0.
-        return ind_pred, localized, score
+        # # if second mode exists (with meaningful mass), set 0 score so model
+        # # does not converge upon computing curves used in results
+
+        # if belief_nhood_next.sum() > 0.05:
+            # localized = False
+            # score = 0.
+        return ind_max, localized, score

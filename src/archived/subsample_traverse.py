@@ -18,7 +18,7 @@ def spatial_subsample(traverse, timestamps, poses, vo_ts, vo,
     VO can be very buggy for some traverses, large glitches where there
     is a large motion estimate over a very small time interval. Usually,
     these manifest as large values in the y coordinate in Euler form.
-    This is addressed manually in the function.
+    This is addressed manually in this function.
 
     Also, the dusk RTK malfunctions after a particular timestamp partway
     through the traverse, this is adjusted for manually i.e. stop adding
@@ -67,6 +67,10 @@ def spatial_subsample(traverse, timestamps, poses, vo_ts, vo,
     # remove first two observations since camera + rtk wigs out
     # on initialization, yielding garbage vo and/or rtk readings
     return tstamps[2:], xyzrpy[2:], vo_sub[2:]
+
+
+def generate_traverse(traverse, timestamps, poses, vo_ts, vo,
+                      xy_thres, theta_thres, start_ind=0):
 
 
 if __name__ == "__main__":

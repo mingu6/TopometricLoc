@@ -1,9 +1,9 @@
 motion:
-  width: 2
+  width: 4
   sigma: 1.0
 measurement:
   sigma: 0.5
 other:
   convergence_window: 6
-  convergence_score: 0.97
-  reset_step: 30
+  convergence_score: 0.99
+  reset_step: 60

@@ -4,18 +4,93 @@ import numpy as np
 import pandas as pd
 import cv2
 
-from settings import DATA_DIR
+from settings import DATA_DIR, xyz_centre
+from geometry import SE3, SE2
 
 
 def load_pose_data(traverse, fname, ind=None):
     df = pd.read_csv(path.join(DATA_DIR, traverse, 'subsampled', fname))
     ind_end = len(df) if ind is None else ind
-    tstamps = df['timestamp'][:ind_end].to_numpy()
-    #xyzrpy = df[['northing', 'easting', 'down', 'roll', 'pitch', 'yaw']].to_numpy()
-    xyzrpy = df[['northing', 'easting', 'yaw']].to_numpy()[:ind_end].astype(np.float32)
-    #vo = df[['vo_x', 'vo_y', 'vo_z', 'vo_roll', 'vo_pitch', 'vo_yaw']].to_numpy()[:-1]
-    vo = df[['vo_x', 'vo_y', 'vo_yaw']].to_numpy()[:ind_end-1].astype(np.float32)
-    return tstamps, xyzrpy, vo
+    tstamps = df['ts'][:ind_end].to_numpy()
+    gt_pose = df[['x', 'y', 'theta']].to_numpy()\
+        [:ind_end].astype(np.float32)
+    vo_mu = df[['mu_x', 'mu_y', 'mu_theta']].to_numpy()\
+        [:ind_end].astype(np.float32)
+    vo_Sigma = df.iloc[:, -9:].to_numpy().reshape((-1, 3, 3))
+    return tstamps, gt_pose, vo_mu, vo_Sigma
+
+
+def preprocess_robotcar(traverse):
+    columns = ['timestamp', 'northing', 'easting', 'down',
+               'roll', 'pitch', 'yaw']
+    columns_vo = ['x', 'y', 'z', 'roll', 'pitch', 'yaw']
+
+    traverse_path = path.join(DATA_DIR, traverse)
+
+    # load GT RTK timestamps and poses from csv
+    # process gt poses by projecting to SE(2) and adjusting centre of
+    # translation since RTK gt has large values for translation
+    raw_df = pd.read_csv(path.join(traverse_path, 'camera_poses.csv'))
+    gt_ts = raw_df['timestamp'].to_numpy()
+    gt_poses_SE3 = SE3.from_xyzrpy(raw_df[columns[1:]].to_numpy())
+    T1 = SE3.from_xyzrpy(np.asarray([0, 0, 0, -np.pi, -np.pi, np.pi / 2]))
+    # rotates coord frame so fw motion is in the x coord
+    gt_poses = (gt_poses_SE3 * T1).to_xyzypr()[:, [0, 1, 3]]
+    gt_adj = np.array([*xyz_centre[:2], 0.])  # adjust centre of coord frame
+    gt_poses = gt_poses - gt_adj[None, :]
+
+    # load VO timestamps and poses from csv
+
+    vo_df = pd.read_csv(path.join(traverse_path, 'vo.csv'))
+    vo_ts = vo_df['destination_timestamp'].to_numpy()
+    vo_xyzrpy = vo_df[columns_vo].to_numpy()
+    vo = SE3.from_xyzrpy(vo_xyzrpy).to_xyzypr()[:, [0, 1, 3]]
+
+    # remove outliers in VO
+
+    outlier_inds = np.abs(vo[:, 1]) > 0.2
+    vo = np.delete(vo, outlier_inds, axis=0)
+    vo_ts = np.delete(vo_ts, outlier_inds, axis=0)
+
+    # manually cutoff dusk, RTK fails before end of traverse
+
+    dusk_delete_inds_vo = np.logical_and(traverse == 'dusk',
+                                         vo_ts > 1416587217921391)
+    dusk_delete_inds_gt = np.logical_and(traverse == 'dusk',
+                                         gt_ts > 1416587217921391)
+    gt_ts = np.delete(gt_ts, dusk_delete_inds_gt, axis=0)
+    gt_poses = np.delete(gt_poses, dusk_delete_inds_gt, axis=0)
+    vo_ts = np.delete(vo_ts, dusk_delete_inds_vo, axis=0)
+    vo = np.delete(vo, dusk_delete_inds_vo, axis=0)
+
+    # accumulate vo until enough distance has been travelled for stable
+    # odometry models. Odometry model does not behave well with small/backward
+    # motion
+
+    od_accum = SE2(np.zeros(3))
+    gt_ts1 = [vo_ts[0]]
+    gt_poses1 = [gt_poses[0]]
+    vo1 = [np.zeros(3)]
+    vo_ts1 = [vo_ts[0]]
+
+    for ts, od in zip(vo_ts, vo):
+        xy_mag, th_mag = od_accum.magnitude()
+        if xy_mag > 0.5 or th_mag > 5. * np.pi / 180.:
+            if ts in gt_ts:
+                gt_ts1.append(ts)
+                gt_poses1.append(np.squeeze(gt_poses[gt_ts == ts]))
+                vo1.append(od_accum.to_vec())
+                vo_ts1.append(ts)
+                # reset, begin accumulating next obs
+                od_accum = SE2(np.zeros(3))
+        od_accum = od_accum * SE2(od)
+
+    gt_ts1 = np.asarray(gt_ts1)
+    gt_poses1 = np.asarray(gt_poses1)
+    vo1 = np.asarray(vo1)
+    vo_ts1 = np.asarray(vo_ts1)
+
+    return gt_ts1, gt_poses1, vo_ts1, vo1
 
 
 def read_global(traverse, tstamps):
