@@ -6,8 +6,12 @@ Run the steps in the following order to get things working.
 
 ## Initial setup
 
-Clone repo, then run
+Clone repo, and setup virtual environment. OpenVINO only works with Python 3.7, so run
 
+`conda create env -n topometricloc python=3.7
+conda activate topometricloc`
+
+Then run
 ```
 cd TopometricLoc
 sh setup.sh

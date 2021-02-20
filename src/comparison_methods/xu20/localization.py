@@ -2,6 +2,8 @@ import numpy as np
 
 import scipy.sparse as sparse
 
+from ours.localization import calibrate
+
 
 def create_transition_matrix(N, lower, upper):
     """
@@ -19,7 +21,7 @@ def create_transition_matrix(N, lower, upper):
     return mat.tocsc()
 
 
-class OnlineLocalization:
+class Localization:
     def __init__(self, params, refMap):
         # model parameters
         self.motion_params = params["motion"]
@@ -45,18 +47,13 @@ class OnlineLocalization:
         self.reset = params["other"]["reset_step"]
         self.t = 0
 
-    def init(self, qOdom, qGlb, qLoc, uniform=False):
+    def init(self, qmu, qSigma, qGlb, qLoc, uniform=False):
         """
         Allows for any initialization at time 0 before first motion update.
         Calibrates intensity parameter lambda using first VPR measurement
         and sets belief. Option to set a uniform belief initialization.
         """
-        query_sims = self.refMap.glb_des @ qGlb
-        dist = np.sqrt(2. - 2. * query_sims)
-        descriptor_quantiles = np.quantile(dist, [0.025, 0.975])
-        quantile_range = descriptor_quantiles[1] - descriptor_quantiles[0]
-        self.lambd = np.log(self.delta) / quantile_range
-        lhood = np.exp(-self.lambd * dist)
+        self.lambd, lhood = calibrate(qGlb, self.refMap, self.delta)
         if not uniform:
             self.belief = lhood
             self.belief /= self.belief.sum()
@@ -64,7 +61,7 @@ class OnlineLocalization:
             self.belief = np.ones(self.refMap.N) / self.refMap.N
         return lhood
 
-    def _update_motion(self, qOdom):
+    def _update_motion(self, qmu, qSigma):
         """
         Applies motion update to belief.
         """
@@ -83,16 +80,16 @@ class OnlineLocalization:
         self.belief /= self.belief.sum()
         return lhood
 
-    def update(self, qOdom, qGlb, qLoc):
+    def update(self, qmu, qSigma, qGlb, qLoc):
         """
         Applies full motion and meas. update to belief.
         """
         # reset if not converged by step limit
         if self.t >= self.reset:
             self.t = 0
-            self.init(qOdom, qGlb, qLoc, uniform=True)
+            self.init(qmu, qSigma, qGlb, qLoc, uniform=True)
         # state update
-        self._update_motion(qOdom)
+        self._update_motion(qmu, qSigma)
         self._update_meas(qGlb, qLoc)
         # update step count since last reset
         self.t += 1
@@ -105,35 +102,8 @@ class OnlineLocalization:
         # take window around posterior mode, check prob. mass underneath
         sum_belief = np.convolve(self.belief, np.ones(2 * window + 1),
                                  mode='same')
-        ind_max = np.argmax(sum_belief)
-        ind_max = np.argmax(self.belief)
-        score = sum_belief[ind_max]
-        localized = score > score_thres
+        pred_ind = np.argmax(self.belief)
+        score = sum_belief[pred_ind]
+        check = True
 
-        # ind_max = np.argmax(self.belief)
-        # nhood_inds = np.arange(max(ind_max-window, 0),
-                               # min(ind_max+window, len(self.belief)))
-        # belief_nhood = self.belief[nhood_inds]
-        # localized = belief_nhood.sum() > score_thres
-        # ind_pred = round(nhood_inds.mean())
-
-        # # check that only one mode exists, identify next largest mode
-
-        # belief_alt = self.belief[:-1].copy()
-        # larger_window = np.arange(max(ind_pred-window*3, 0),
-                                  # min(ind_pred+window*3, len(self.belief)-1))
-        # belief_alt[larger_window] = 0.
-        # ind_max_next = np.argmax(belief_alt)
-        # nhood_inds_next = np.arange(max(ind_max_next-window, 0),
-                                    # min(ind_max_next+window, len(self.belief)-1))
-        # belief_nhood_next = belief_alt[nhood_inds_next]
-
-        # # if second mode exists (with meaningful mass), set 0 score so model
-        # # does not converge upon computing curves used in results
-
-        # score = belief_nhood.sum()
-        # if belief_nhood_next.sum() > 0.05:
-            # localized = False
-            # score = 0.
-
-        return ind_max, localized, score
+        return pred_ind, check, score

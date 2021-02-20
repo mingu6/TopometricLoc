@@ -132,16 +132,24 @@ class SE3:
         if t.shape == (3,):
             t = t[None, :]
             self._single = True
-            if len(R) > 1:
-                raise ValueError("Different number of translations 1 and rotations {}.".format(len(R)))
+            if not R.single:
+                raise ValueError("Different number of translations 1 and "
+                                 "rotations {}.".format(len(R)))
         elif len(t) == 1:
             self._single = True
+            if not R.single:
+                raise ValueError("Different number of translations 1 and "
+                                 "rotations {}.".format(len(R)))
+        elif R.single:
+            raise ValueError("Different number of translations {} and "
+                             "rotations 1.".format(len(t)))
         else:
             if len(t) != len(R):
-                raise ValueError("Differing number of translations {} and rotations {}".format(len(t),len(R)))
+                raise ValueError("Differing number of translations {} "
+                                 "and rotations {}".format(len(t),len(R)))
         self._t = t
         self._R = R
-        self.len = len(R)
+        self.len = 1 if R.single else len(R)
 
     @classmethod
     def from_xyzrpy(cls, xyzrpy):

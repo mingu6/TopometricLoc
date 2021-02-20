@@ -110,8 +110,8 @@ if __name__ == "__main__":
     fname = args.filename
 
     # read reference map node data
-    tstamps, gt, vo = load_pose_data(traverse, fname)
-    refMap = RefMap(traverse, tstamps, vo, width=args.width, gt_poses=gt)
+    tstamps, gt, vo_mu, _ = load_pose_data(traverse, fname)
+    refMap = RefMap(traverse, tstamps, vo_mu, width=args.width, gt_poses=gt)
 
     # save map
     map_dir = path.join(DATA_DIR, traverse, 'saved_maps')

@@ -15,6 +15,11 @@ from geometry import SE3, SE2
 
 self_dirpath = os.path.dirname(os.path.abspath(__file__))
 
+# cutoff indices for specific traverses
+cutoffs = {"sun_clouds_detour2": (7500, 10200),
+           "sun_clouds_detour1": (5600, 12500),
+           "rain_detour": (7600, 10400)}
+
 
 def generate_traverse_robotcar(traverse, params, gt_ts, gt_poses, vo_ts, vo,
                                xy_thres, theta_thres, start_ind=0):
@@ -166,7 +171,9 @@ if __name__ == "__main__":
 
         # load gt, odometry and tstamp data
 
-        gt_tstamps, gt_poses, odom_ts, odom = preprocess_robotcar(traverse)
+        cutoff_inds = None if traverse not in cutoffs else cutoffs[traverse]
+        gt_tstamps, gt_poses, odom_ts, odom = preprocess_robotcar(traverse,
+                                                                  cutoff_inds)
 
         # if RobotCar, load saved motion model parameters
 

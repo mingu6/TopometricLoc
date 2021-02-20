@@ -20,7 +20,7 @@ def load_pose_data(traverse, fname, ind=None):
     return tstamps, gt_pose, vo_mu, vo_Sigma
 
 
-def preprocess_robotcar(traverse):
+def preprocess_robotcar(traverse, cutoffs=None):
     columns = ['timestamp', 'northing', 'easting', 'down',
                'roll', 'pitch', 'yaw']
     columns_vo = ['x', 'y', 'z', 'roll', 'pitch', 'yaw']
@@ -49,8 +49,9 @@ def preprocess_robotcar(traverse):
     # remove outliers in VO
 
     outlier_inds = np.abs(vo[:, 1]) > 0.2
-    vo = np.delete(vo, outlier_inds, axis=0)
-    vo_ts = np.delete(vo_ts, outlier_inds, axis=0)
+    if len(outlier_inds):
+        vo = np.delete(vo, outlier_inds, axis=0)
+        vo_ts = np.delete(vo_ts, outlier_inds, axis=0)
 
     # manually cutoff dusk, RTK fails before end of traverse
 
@@ -58,10 +59,12 @@ def preprocess_robotcar(traverse):
                                          vo_ts > 1416587217921391)
     dusk_delete_inds_gt = np.logical_and(traverse == 'dusk',
                                          gt_ts > 1416587217921391)
-    gt_ts = np.delete(gt_ts, dusk_delete_inds_gt, axis=0)
-    gt_poses = np.delete(gt_poses, dusk_delete_inds_gt, axis=0)
-    vo_ts = np.delete(vo_ts, dusk_delete_inds_vo, axis=0)
-    vo = np.delete(vo, dusk_delete_inds_vo, axis=0)
+    if len(dusk_delete_inds_gt):
+        gt_ts = np.delete(gt_ts, dusk_delete_inds_gt, axis=0)
+        gt_poses = np.delete(gt_poses, dusk_delete_inds_gt, axis=0)
+    if len(dusk_delete_inds_vo):
+        vo_ts = np.delete(vo_ts, dusk_delete_inds_vo, axis=0)
+        vo = np.delete(vo, dusk_delete_inds_vo, axis=0)
 
     # accumulate vo until enough distance has been travelled for stable
     # odometry models. Odometry model does not behave well with small/backward
@@ -89,6 +92,18 @@ def preprocess_robotcar(traverse):
     gt_poses1 = np.asarray(gt_poses1)
     vo1 = np.asarray(vo1)
     vo_ts1 = np.asarray(vo_ts1)
+
+    # extract segment of traverse only if required
+
+    if cutoffs is not None:
+        # indices for slice
+        l = cutoffs[0]
+        u = cutoffs[1]
+        # extract subset
+        gt_ts1 = gt_ts1[l:u]
+        gt_poses1 = gt_poses1[l:u]
+        vo1 = vo1[l:u]
+        vo_ts1 = vo_ts1[l:u]
 
     return gt_ts1, gt_poses1, vo_ts1, vo1
 

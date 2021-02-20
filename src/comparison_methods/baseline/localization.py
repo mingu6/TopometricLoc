@@ -3,7 +3,7 @@ import numpy as np
 from ours.measurement import off_map_detection
 
 
-class OnlineLocalization:
+class Localization:
     def __init__(self, params, refMap):
         # model parameters
         self.meas_params = params["measurement"]
@@ -14,14 +14,14 @@ class OnlineLocalization:
         self.predict_ind = None  # estimated state index
         self.verified = False  # flag changes if verification succeeds
 
-    def init(self, qOdom, qGlb, qLoc):
+    def init(self, qmu, qSigma, qGlb, qLoc):
         """
         Allows for any initialization at time 0 before first motion update
         """
-        self.update(qOdom, qGlb, qLoc)
+        self.update(qmu, qSigma, qGlb, qLoc)
         return None
 
-    def update(self, qOdom, qGlb, qLoc):
+    def update(self, qmu, qSigma, qGlb, qLoc):
         """
         Updates most likely state estimate by geom. verif.
         """
@@ -43,7 +43,7 @@ class OnlineLocalization:
         return None
 
     def converged(self, qGlb, qLoc):
-        localized = self.verified
-        ind_max = self.predict_ind
-        score = 1. if localized else 0.
-        return ind_max, localized, score
+        check = self.verified
+        pred_ind = self.predict_ind
+        score = 0.
+        return pred_ind, check, score

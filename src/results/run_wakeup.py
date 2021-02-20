@@ -6,51 +6,43 @@ import os.path as path
 import pickle
 from tqdm import tqdm
 
-import csv
 import yaml
 
 from data.utils import load_pose_data, read_global, read_local_raw
+from geometry import SE2
 from ours.mapping import RefMap
 from settings import DATA_DIR, RESULTS_DIR
 from utils import pose_err
 
 self_dirpath = os.path.dirname(os.path.abspath(__file__))
 
-convergence_max = {
-    'night': 0.995,
-    'dusk': 0.94,
-    'sun_clouds_detour2': 0.99,
-    'rain_detour': 0.99,
-    'sun_clouds_detour1': 0.99
-}
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description=("Run localization experiments for our method or comparisons"))
     parser.add_argument("-rt", "--reference-traverse", type=str, default="overcast1",
                         help="reference traverse name, e.g. overcast, night")
-    parser.add_argument("-qt", "--query-traverses", type=str, nargs="+",
-                        default=["sun_clouds_detour2", "night"],
-                        choices=["sun_clouds_detour2", "night"],
+    parser.add_argument("-qt", "--query-traverses", type=str, nargs="+", required=True,
                         help="query traverse name, e.g. dusk, night")
     parser.add_argument("-rf", "--reference-filename", type=str,
-                        default='t_1_w_10_wd_2.pickle',
+                        default='xy_1_t_10_wd_4.pickle',
                         help="filename containing reference map object")
-    parser.add_argument("-qf", "--query-filename", type=str, default='t_1_w_10.csv',
+    parser.add_argument("-qf", "--query-filename", type=str, default='xy_2_t_15.csv',
                         help="filename containing subsampled query traverse poses")
     parser.add_argument("-p", "--params", type=str, default="",
                         help="filename containing model parameters")
-    parser.add_argument("-t", "--trials", type=int, default=1000,
+    parser.add_argument("-n", "--num-trials", type=int, default=500,
                         help="number of trials to run, evenly distributed")
     parser.add_argument("-m", "--methods", nargs="+", type=str,
                         choices=["ours", "xu20", "stenborg20", "baseline", "noverif", "nooff"],
                         default=["ours", "xu20", "stenborg20", "baseline", "noverif", "nooff"])
+    parser.add_argument("-d", "--max-dist", type=float, default=200,
+                        help="maximum distance travelled (m) per trial")
     args = parser.parse_args()
 
     ref_traverse = args.reference_traverse
     r_fname = args.reference_filename
     q_fname = args.query_filename
+    max_dist = args.max_dist
 
     # load map
     map_dir = path.join(DATA_DIR, ref_traverse, 'saved_maps')
@@ -62,17 +54,19 @@ if __name__ == "__main__":
     for query in pbarq:
         pbarq.set_description(query)
         # load query sequence
-        tstampsQ, xyzrpyQ, muQ, SigmaQ = load_pose_data(query, q_fname)
+        tstampsQ, gtQ, muQ, SigmaQ = load_pose_data(query, q_fname)
         query_global = read_global(query, tstampsQ)
         # compute distance travelled (meters) from starting location
         # for all query images in sequence
-        relpose = xyzrpyQ[1:, :2] - xyzrpyQ[:-1, :2]
-        relpose = np.vstack((np.zeros(2), relpose))
-        dist_from_start = np.cumsum(np.linalg.norm(relpose, axis=1))
+        relpose = (SE2(gtQ[:-1]) / SE2(gtQ[1:])).to_vec()
+        relpose = np.vstack((np.zeros(3), relpose))
+        dist_from_start = np.cumsum(np.linalg.norm(relpose[:, :2], axis=1))
 
-        # subsample query traverse for starting point, leave gap at the end
-        # of traverse so last trials has some steps to converge!
-        start_inds = np.linspace(0, len(tstampsQ) - 50, args.trials).astype(int)
+        # subsample query traverse for starting point, allow for gap of
+        # max dist at end of traverse for final trial
+        ind_max = np.max(np.argwhere(dist_from_start[-1] -
+                                     dist_from_start > max_dist))
+        start_inds = np.linspace(0, ind_max, args.num_trials).astype(int)
 
         pbarm = tqdm(args.methods)
         for method in pbarm:
@@ -80,12 +74,16 @@ if __name__ == "__main__":
 
             # for each method (ours/comparisons), import assoc. module
 
-            if method in ["ours", "noverif", "nooff"]:
-                from ours.online import OnlineLocalization
+            if method == "ours":
+                from ours.localization import LocalizationFull as Localization
+            elif method == "noverif":
+                from ours.localization import LocalizationNoVerif as Localization
+            elif method == "nooff":
+                from ours.localization import LocalizationNoOff as Localization
             else:
-                online = importlib.import_module(
-                    f"comparison_methods.{method}.online")
-                OnlineLocalization = online.OnlineLocalization
+                localization= importlib.import_module(
+                    f"comparison_methods.{method}.localization")
+                Localization = localization.Localization
 
             # import params
 
@@ -97,11 +95,9 @@ if __name__ == "__main__":
 
             # read in parameters
 
-            params_path = path.abspath(path.join(self_dirpath, "params"))
+            params_path = path.abspath(path.join(self_dirpath, "..", "params"))
             with open(path.join(params_path, params_file), 'r') as f:
                 params = yaml.safe_load(f)
-            if method in ["ours", "noverif", "nooff"]:
-                params['other']['convergence_score'] = convergence_max[query]
 
             # create description of experiment if not specified
 
@@ -111,64 +107,54 @@ if __name__ == "__main__":
             # start localization process
 
             results = []
-            t_max = 0
             ntrials = len(start_inds)
 
             for i, sInd in enumerate(tqdm(start_inds, desc="trials",
                                           leave=False)):
-                trial_results = []
                 # setup localization object
-                if method != 'nooff':
-                    loc = OnlineLocalization(params, refMap)
-                else:
-                    loc = OnlineLocalization(params, refMap, nooff=True)
+                loc = Localization(params, refMap)
 
-                for t, s in enumerate(range(sInd, len(muQ))):
+                # save results
+                scores = []
+                checks = []
+                xy_errs = []
+                rot_errs = []
+
+                s = sInd
+                while dist_from_start[s] - dist_from_start[sInd] < max_dist:
+                    t = s - sInd  # trial timestep
                     qLoc = read_local_raw(query, tstampsQ[s])
                     qGlb = query_global[s]
-                    odomQ = (muQ[s], SigmaQ[s])
+                    qmu, qSigma = muQ[s], SigmaQ[s]
                     # usually at t=0 there is a meas. update with no motion
                     # separate initialization performed
                     if t == 0:
-                        if method == 'noverif':
-                            loc.init(odomQ, qGlb, qLoc, noverif=True)
-                        elif method == 'nooff':
-                            loc.init(odomQ, qGlb, qLoc, nooff=True)
-                        else:
-                            loc.init(odomQ, qGlb, qLoc)
+                        loc.init(qmu, qSigma, qGlb, qLoc)
                     else:
                         # update state estimate
-                        if method == 'noverif':
-                            loc.update(odomQ, qGlb, qLoc, noverif=True)
-                        elif method == 'nooff':
-                            loc.update(odomQ, qGlb, qLoc, nooff=True)
-                        else:
-                            loc.update(odomQ, qGlb, qLoc)
+                        loc.update(qmu, qSigma, qGlb, qLoc)
                     # check convergence
-                    ind_max, converged, score = loc.converged(qGlb, qLoc)
+                    ind_pred, check, score = loc.converged(qGlb, qLoc)
+                    scores.append(score)
+                    checks.append(check)
                     # evaluation against ground truth
-                    t_err, R_err = pose_err(xyzrpyQ[sInd+t],
-                                            refMap.gt_poses[ind_max],
-                                            degrees=True)
-                    results_tup = (dist_from_start[s] - dist_from_start[sInd],
-                                   score, t_err, R_err)
-                    trial_results.extend(results_tup)
-                    if converged:
-                        # identify longest steps to localization for writing
-                        # headers in results file
-                        if t > t_max:
-                            t_max = t
-                        break
+                    xy_err, rot_err = pose_err(gtQ[sInd+t], refMap.gt_poses[ind_pred],
+                                               degrees=True)
+                    xy_errs.append(xy_err)
+                    rot_errs.append(rot_err)
+                    s += 1
 
-                # if final trial did not converge, discard from evaluation
-                if not converged:
-                    break
+                result = {"dist": dist_from_start[sInd:s] - dist_from_start[sInd],
+                          "scores": np.asarray(scores), "checks": np.asarray(checks),
+                          "xy_err": np.asarray(xy_errs),
+                          "rot_err": np.asarray(rot_errs)}
+
                 trial_no = i + 1
-                results.append([trial_no, ntrials, *trial_results])
+                results.append(result)
 
             # create new folder to store results
 
-            rpath = path.join(RESULTS_DIR, "online")
+            rpath = path.join(RESULTS_DIR, "wakeup")
             os.makedirs(rpath, exist_ok=True)  # create base results folder if required
             trials = [int(p.split("_")[-1]) for p in os.listdir(rpath)
                       if "_".join(p.split("_")[:-1]) == description]
@@ -179,17 +165,10 @@ if __name__ == "__main__":
                 results_path = path.join(rpath, f"{description}_1")
             os.makedirs(results_path)
 
-            # write results to csv
+            # dump results
 
-            with open(path.join(results_path, "results.csv"), "w") as csv_file:
-                writer = csv.writer(csv_file, delimiter=',')
-                # write header row
-                header = ["trial", "ntrials",
-                          *(f"dist_from_start_{t},score_{t},t_err_{t},R_err_{t}"
-                            for t in range(t_max+1))]
-                csv_file.write(",".join(header) + "\n")
-                for result in results:
-                    writer.writerow(result)
+            with open(path.join(results_path, "results.pickle"), "wb") as f:
+                pickle.dump(results, f)
 
             # save parameters into results folder for records
 

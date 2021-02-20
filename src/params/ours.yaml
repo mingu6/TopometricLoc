@@ -15,8 +15,8 @@ measurement:
   delta: 4.0
   pca_dim: 4096
   # noisy off-map detection prob.
-  p_off_off: 0.55
-  p_on_on: 0.55
+  p_off_off: 0.7
+  p_on_on: 0.6
   # geometric verification
   window: 10
   num_feats: 500
@@ -25,7 +25,7 @@ measurement:
   confidence: 0.99
   num_verif: 2
 other:
-  prior_off: 0.1
-  convergence_score: 0.995
+  prior_off: 0.3
+  convergence_score: 0.98
   convergence_window: 6
-  off_map_lb: 0.2
+  off_map_lb: 0.3

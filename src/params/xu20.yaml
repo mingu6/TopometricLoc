@@ -6,4 +6,4 @@ measurement:
 other:
   convergence_window: 6
   convergence_score: 0.95
-  reset_step: 60
+  reset_step: 1000
