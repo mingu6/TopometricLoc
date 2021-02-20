@@ -119,6 +119,7 @@ if __name__ == "__main__":
                 checks = []
                 xy_errs = []
                 rot_errs = []
+                ref_inds = []
 
                 s = sInd
                 while dist_from_start[s] - dist_from_start[sInd] < max_dist:
@@ -137,6 +138,7 @@ if __name__ == "__main__":
                     ind_pred, check, score = loc.converged(qGlb, qLoc)
                     scores.append(score)
                     checks.append(check)
+                    ref_inds.append(ind_pred)
                     # evaluation against ground truth
                     xy_err, rot_err = pose_err(gtQ[sInd+t], refMap.gt_poses[ind_pred],
                                                degrees=True)
@@ -146,6 +148,7 @@ if __name__ == "__main__":
 
                 result = {"dist": dist_from_start[sInd:s] - dist_from_start[sInd],
                           "scores": np.asarray(scores), "checks": np.asarray(checks),
+                          "ref_inds": np.asarray(ref_inds),
                           "xy_err": np.asarray(xy_errs),
                           "rot_err": np.asarray(rot_errs)}
 
@@ -162,7 +165,7 @@ if __name__ == "__main__":
                 trial_count = max(trials) + 1
                 results_path = path.join(rpath, f"{description}_{trial_count}")
             else:
-                results_path = path.join(rpath, f"{description}_1")
+                results_path = path.join(rpath, f"{description}_2")
             os.makedirs(results_path)
 
             # dump results
