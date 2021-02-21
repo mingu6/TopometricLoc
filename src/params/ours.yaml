@@ -28,4 +28,4 @@ other:
   prior_off: 0.3
   convergence_score: 0.98
   convergence_window: 6
-  off_map_lb: 0.3
+  off_map_lb: 0.4
