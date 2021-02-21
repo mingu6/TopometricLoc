@@ -22,7 +22,7 @@ on_rot_thres = 30.
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description=("Run localization experiments for our method or comparisons"))
+        description=("Run global localization experiments for our method or comparisons"))
     parser.add_argument("-rt", "--reference-traverse", type=str, default="overcast1",
                         help="reference traverse name, e.g. overcast, night")
     parser.add_argument("-qt", "--query-traverses", type=str, nargs="+", required=True,
