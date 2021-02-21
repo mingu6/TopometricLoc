@@ -20,6 +20,72 @@ def calibrate(qGlb0, refMap, delta):
     return lambd, lhood
 
 
+def convergedFull(loc, qGlb, qLoc, belief):
+    """
+    Convergence detection for belief, standalone function
+    Args:
+        loc: localization object
+        qGlb: Global features (query)
+        qLoc: Local features (query)
+    Returns:
+        ind_prop: Proposed robot place within reference map
+        check: Flag to allow convergence. If check = False, do not
+               allow robot to localize even if score passes threshold
+        score: Confidence score representing convergence of belief
+    """
+    window = loc.other_params['convergence_window']
+    num_feats = loc.meas_params['num_feats']
+    num_inliers = loc.meas_params['num_inliers']
+    inlier_threshold = loc.meas_params['inlier_threshold']
+    confidence = loc.meas_params['confidence']
+
+    # take window around posterior mode, check prob. mass underneath
+
+    sum_belief = np.convolve(belief[:-1], np.ones(2 * window + 1),
+                             mode='same')
+    ind_prop = np.argmax(belief[:-1])
+    score = sum_belief[ind_prop] / (1. - belief[-1])
+    check = belief[-1] < loc.other_params['off_map_lb']
+    # # spatial verification on most likely state
+    # if check:
+        # qkp, qdes = preprocess_local_features(qLoc, num_feats)
+        # kp, des = loc.refMap.load_local(ind_prop, num_feats)
+        # verif_success = geometric_verification(kp, des, qkp, qdes,
+                                               # num_inliers, inlier_threshold,
+                                               # confidence)
+        # check = check and verif_success
+
+    return ind_prop, check, score
+
+
+def convergedNoVerif(loc, qGlb, qLoc, belief):
+    window = loc.other_params['convergence_window']
+
+    # take window around posterior mode, check prob. mass underneath
+
+    sum_belief = np.convolve(belief[:-1], np.ones(2 * window + 1),
+                             mode='same')
+    ind_prop = np.argmax(belief[:-1])
+    score = sum_belief[ind_prop] / (1. - belief[-1])
+    check = belief[-1] < loc.other_params['off_map_lb']
+
+    return ind_prop, check, score
+
+
+def convergedNoOff(loc, qGlb, qLoc, belief):
+    window = loc.other_params['convergence_window']
+
+    # take window around posterior mode, check prob. mass underneath
+
+    sum_belief = np.convolve(belief, np.ones(2 * window + 1),
+                             mode='same')
+    ind_prop = np.argmax(belief)
+    score = sum_belief[ind_prop]
+    check = True
+
+    return ind_prop, check, score
+
+
 class LocalizationFull:
     """
     Our full topometric localization model, utilizing local features
@@ -41,7 +107,7 @@ class LocalizationFull:
         self.odom_segments = refMap.odom_segments.copy()
 
         # meas params
-        self.lamb = None
+        self.lambd = None
 
     def init(self, qmu, qSigma, qGlb, qLoc):
         """
@@ -134,14 +200,14 @@ class LocalizationFull:
         ind_prop = np.argmax(self.belief[:-1])
         score = sum_belief[ind_prop] / (1. - self.belief[-1])
         check = self.belief[-1] < self.other_params['off_map_lb']
-        # spatial verification on most likely state
-        if check:
-            qkp, qdes = preprocess_local_features(qLoc, num_feats)
-            kp, des = self.refMap.load_local(ind_prop, num_feats)
-            verif_success = geometric_verification(kp, des, qkp, qdes,
-                                                   num_inliers, inlier_threshold,
-                                                   confidence)
-            check = check and verif_success
+        # # spatial verification on most likely state
+        # if check:
+            # qkp, qdes = preprocess_local_features(qLoc, num_feats)
+            # kp, des = self.refMap.load_local(ind_prop, num_feats)
+            # verif_success = geometric_verification(kp, des, qkp, qdes,
+                                                   # num_inliers, inlier_threshold,
+                                                   # confidence)
+            # check = check and verif_success
 
         return ind_prop, check, score
 
@@ -249,11 +315,6 @@ class LocalizationNoVerif:
             score: Confidence score representing convergence of belief
         """
         window = self.other_params['convergence_window']
-        score_thres = self.other_params['convergence_score']
-        num_feats = self.meas_params['num_feats']
-        num_inliers = self.meas_params['num_inliers']
-        inlier_threshold = self.meas_params['inlier_threshold']
-        confidence = self.meas_params['confidence']
 
         # take window around posterior mode, check prob. mass underneath
 
@@ -344,11 +405,6 @@ class LocalizationNoOff:
             score: Confidence score representing convergence of belief
         """
         window = self.other_params['convergence_window']
-        score_thres = self.other_params['convergence_score']
-        num_feats = self.meas_params['num_feats']
-        num_inliers = self.meas_params['num_inliers']
-        inlier_threshold = self.meas_params['inlier_threshold']
-        confidence = self.meas_params['confidence']
 
         # take window around posterior mode, check prob. mass underneath
 
