@@ -122,7 +122,6 @@ class LocalizationFull:
             score: Confidence score representing convergence of belief
         """
         window = self.other_params['convergence_window']
-        score_thres = self.other_params['convergence_score']
         num_feats = self.meas_params['num_feats']
         num_inliers = self.meas_params['num_inliers']
         inlier_threshold = self.meas_params['inlier_threshold']
@@ -136,12 +135,13 @@ class LocalizationFull:
         score = sum_belief[ind_prop] / (1. - self.belief[-1])
         check = self.belief[-1] < self.other_params['off_map_lb']
         # spatial verification on most likely state
-        qkp, qdes = preprocess_local_features(qLoc, num_feats)
-        kp, des = self.refMap.load_local(ind_prop, num_feats)
-        verif_success = geometric_verification(kp, des, qkp, qdes,
-                                               num_inliers, inlier_threshold,
-                                               confidence)
-        check = check and verif_success
+        if check:
+            qkp, qdes = preprocess_local_features(qLoc, num_feats)
+            kp, des = self.refMap.load_local(ind_prop, num_feats)
+            verif_success = geometric_verification(kp, des, qkp, qdes,
+                                                   num_inliers, inlier_threshold,
+                                                   confidence)
+            check = check and verif_success
 
         return ind_prop, check, score
 

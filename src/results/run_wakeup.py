@@ -16,6 +16,10 @@ from utils import pose_err
 
 self_dirpath = os.path.dirname(os.path.abspath(__file__))
 
+# off-map thresholds, within this tolerance to be considered on-map
+on_xy_thres = 5.
+on_rot_thres = 30.
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description=("Run localization experiments for our method or comparisons"))
@@ -53,20 +57,44 @@ if __name__ == "__main__":
     pbarq = tqdm(args.query_traverses)
     for query in pbarq:
         pbarq.set_description(query)
+
         # load query sequence
+
         tstampsQ, gtQ, muQ, SigmaQ = load_pose_data(query, q_fname)
         query_global = read_global(query, tstampsQ)
+
         # compute distance travelled (meters) from starting location
         # for all query images in sequence
-        relpose = (SE2(gtQ[:-1]) / SE2(gtQ[1:])).to_vec()
+
+        gtQSE2 = SE2(gtQ)
+        relpose = (gtQSE2[:-1] / gtQSE2[1:]).to_vec()
         relpose = np.vstack((np.zeros(3), relpose))
         dist_from_start = np.cumsum(np.linalg.norm(relpose[:, :2], axis=1))
 
         # subsample query traverse for starting point, allow for gap of
         # max dist at end of traverse for final trial
+
         ind_max = np.max(np.argwhere(dist_from_start[-1] -
                                      dist_from_start > max_dist))
         start_inds = np.linspace(0, ind_max, args.num_trials).astype(int)
+
+        # identify on-map status of query
+
+        refgtSE2 = SE2(refMap.gt_poses)
+        def min_pose_err(poseSE2):
+            xy_errs, rot_errs = (poseSE2 / refgtSE2).magnitude()
+            wgtd = xy_errs + 10. * rot_errs
+            best = np.argmin(wgtd)
+            return xy_errs[best], rot_errs[best]
+        qgt_err = np.asarray(list(map(min_pose_err, gtQSE2))).T
+        qxy, qrot = qgt_err
+
+        # night-rain traverses uses GPS, orientation wrong so override
+
+        on_xy_thres1 = on_xy_thres if query != 'night-rain' else 10.
+        on_rot_thres1 = on_rot_thres if query != 'night-rain' else 360.
+        q_on_map = np.logical_and(qxy < on_xy_thres1,
+                                  qrot * 180. / np.pi < on_rot_thres1)
 
         pbarm = tqdm(args.methods)
         for method in pbarm:
@@ -120,6 +148,8 @@ if __name__ == "__main__":
                 xy_errs = []
                 rot_errs = []
                 ref_inds = []
+                on_map_stats = []
+                off_probs = []
 
                 s = sInd
                 while dist_from_start[s] - dist_from_start[sInd] < max_dist:
@@ -139,18 +169,22 @@ if __name__ == "__main__":
                     scores.append(score)
                     checks.append(check)
                     ref_inds.append(ind_pred)
+                    off_prob = loc.belief[-1] if method in ["ours", "noverif"] else 0.
+                    off_probs.append(off_prob)
                     # evaluation against ground truth
                     xy_err, rot_err = pose_err(gtQ[sInd+t], refMap.gt_poses[ind_pred],
                                                degrees=True)
                     xy_errs.append(xy_err)
                     rot_errs.append(rot_err)
+                    on_map_stats.append(q_on_map[s])
                     s += 1
 
                 result = {"dist": dist_from_start[sInd:s] - dist_from_start[sInd],
                           "scores": np.asarray(scores), "checks": np.asarray(checks),
-                          "ref_inds": np.asarray(ref_inds),
+                          "ref_inds": np.asarray(ref_inds), "off_probs": np.asarray(off_probs),
                           "xy_err": np.asarray(xy_errs),
-                          "rot_err": np.asarray(rot_errs)}
+                          "rot_err": np.asarray(rot_errs),
+                          "on_status": np.asarray(on_map_stats)}
 
                 trial_no = i + 1
                 results.append(result)
