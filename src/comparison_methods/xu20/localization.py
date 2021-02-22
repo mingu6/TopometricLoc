@@ -66,7 +66,7 @@ class Localization:
         Applies motion update to belief.
         """
         self.belief = self.E.T @ self.belief
-        return None
+        return self.E
 
     def _update_meas(self, qGlb, qLoc):
         """
@@ -97,7 +97,6 @@ class Localization:
 
     def converged(self, qGlb, qLoc):
         window = self.other_params['convergence_window']
-        score_thres = self.other_params['convergence_score']
 
         # take window around posterior mode, check prob. mass underneath
         sum_belief = np.convolve(self.belief, np.ones(2 * window + 1),

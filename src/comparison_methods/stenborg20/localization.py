@@ -141,7 +141,6 @@ class Localization:
 
     def converged(self, qGlb, qLoc):
         window = self.other_params['convergence_window']
-        score_thres = self.other_params['convergence_score']
 
         # take window around posterior mode, check prob. mass underneath
 

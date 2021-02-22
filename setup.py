@@ -14,6 +14,7 @@ setup(
         'ipykernel',
         'PyYAML',
         'scikit-learn',
+        'seaborn',
         'openpyxl'
     ],
     package_dir = {'': 'src/'}

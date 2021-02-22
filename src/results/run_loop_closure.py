@@ -66,7 +66,7 @@ def forward_backward(log_prior, log_trans_mats, log_lhoods):
     N = len(log_prior)
     # forward recursion
     logalpha = np.empty((T, len(prior)))
-    for t in range(T):
+    for t in tqdm(range(T), desc='fw step'):
         if t == 0:
             logalpha[t, :] = log_prior + log_lhoods[t]
         else:
@@ -75,7 +75,7 @@ def forward_backward(log_prior, log_trans_mats, log_lhoods):
     log_marginal = logsumexp(logalpha[-1])  # p(X) marginal data lhood
     # backward recursion
     logbeta = np.zeros((T, len(prior)))
-    for t in reversed(range(T-1)):
+    for t in tqdm(reversed(range(T-1)), desc='bw step', total=T-1):
         logbeta[t] = bw_update(logbeta[t+1], log_trans_mats[t], log_lhoods[t+1])
     # forward beliefs
     fw_beliefs = np.empty((T, N))
@@ -103,7 +103,7 @@ if __name__ == "__main__":
                         help="filename containing model parameters")
     parser.add_argument("-m", "--methods", nargs="+", type=str,
                         choices=["ours", "xu20", "stenborg20", "baseline", "noverif", "nooff"],
-                        default=["ours", "xu20", "stenborg20", "baseline", "noverif", "nooff"])
+                        default=["ours", "xu20", "stenborg20", "noverif", "nooff"])
     args = parser.parse_args()
 
     ref_traverse = args.reference_traverse
@@ -199,7 +199,7 @@ if __name__ == "__main__":
 
             # setup localization object
             loc = Localization(params, refMap)
-            for i in tqdm(range(len(tstampsQ)), desc="queries", leave=False):
+            for i in tqdm(range(len(tstampsQ)), desc="extract", leave=False):
 
                 qLoc = read_local_raw(query, tstampsQ[i])
                 qGlb = query_global[i]
@@ -239,7 +239,7 @@ if __name__ == "__main__":
             rot_err_bw = np.empty(T, dtype=float)
             off_prob_bw = np.empty(T, dtype=float)
 
-            for t in range(T):
+            for t in tqdm(range(T), desc='converge', leave=False):
                 qLoc = read_local_raw(query, tstampsQ[i])
                 # check convergence save forward pass stats
                 ind_prop, check, score = converged(

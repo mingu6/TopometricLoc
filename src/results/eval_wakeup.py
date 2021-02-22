@@ -2,10 +2,14 @@ import argparse
 import os
 import os.path as path
 import matplotlib.pyplot as plt
+from matplotlib import rc
+rc('font',**{'family':'sans-serif','sans-serif':['Computer Modern Sans serif']})
+#rc('text', usetex=True)
 import numpy as np
 
 import pickle
 import pandas as pd
+import seaborn as sns; sns.set(); sns.set_style("white"); sns.set_context(font_scale=1.1)
 
 from settings import RESULTS_DIR
 
@@ -19,7 +23,7 @@ colors = {"Ours": "green",
           "Stenborg20": "orange"}
 
 
-linestyle = ["dashed", "solid", "dashdot"]
+linestyle = ["solid", "dashed", "dashdot"]
 
 # convergence scores, more granular near 1
 scores_vec = np.hstack((np.linspace(0., 0.9, 45, endpoint=False),
@@ -197,7 +201,7 @@ def main(args):
                 success_curves[traverse][method].append((x, y))
                 # proportion localized @ dist curve
                 score_ind_at_best = np.argmax(y)  # highest success
-                if np.any(y > 0.99):
+                if np.any(y > 0.97):
                     score_ind_at_best = min(score_ind_at_best, np.argmax(y > 0.99))
                 dist_by, success_by = propn_loc_at_dist_curve(
                     score_ind_at_best, success_results, dist_results, loc_inds)
@@ -205,25 +209,29 @@ def main(args):
 
     # plot curves
     fig, axs = plt.subplots(1, len(success_curves.keys()))
-    fig.suptitle("Propotion success by mean distance to localize (m)",
+    fig.suptitle("Proportion success by mean distance to localize (m)",
                  fontsize=24)
     for i, (traverse, save) in enumerate(success_curves.items()):
         for j, (method, curves) in enumerate(save.items()):
             if method != "Baseline":
                 for k, curve in enumerate(curves):
-                    axs[i].plot(curve[0], curve[1], color=colors[method],
-                                linestyle=linestyle[k],
-                                label=f"{method} @ {xy_thres[k]}m, {rot_thres[k]} deg")
+                    if k == 0:
+                        axs[i].plot(curve[0], curve[1], color=colors[method],
+                                    linestyle=linestyle[k], linewidth=3,
+                                    label=f"{method}")
+                    else:
+                        axs[i].plot(curve[0], curve[1], color=colors[method],
+                                    linestyle=linestyle[k])
             else:
                 axs[i].scatter([curve[0][0]], [curve[1][0]], color=colors[method],
-                               s=50, label=f"{method} @ {xy_thres[k]}m, {rot_thres[k]} deg")
+                               s=50, label=f"{method}")
         axs[i].set_title(f"{traverse}", fontsize=16)
-        axs[i].set_aspect(0.8/axs[i].get_data_ratio(), adjustable='box')
         axs[i].set_xlabel("Mean distance travelled (m)", fontsize=16)
         axs[i].set_ylabel("Proportion of successful trials", fontsize=16)
+        axs[i].set_aspect(0.8/axs[i].get_data_ratio(), adjustable='box')
     axs[-1].legend()
     old_fig_size = fig.get_size_inches()
-    fig.set_size_inches(old_fig_size[0] * 2.0, old_fig_size[1] * 2.0)
+    fig.set_size_inches(old_fig_size[0] * 3.0, old_fig_size[1] * 1.5)
     fig.tight_layout()
 
     # plot curves
@@ -233,16 +241,21 @@ def main(args):
     for i, (traverse, save) in enumerate(propn_curves.items()):
         for j, (method, curves) in enumerate(save.items()):
             for k, curve in enumerate(curves):
-                axs1[i].plot(curve[0], curve[1], color=colors[method],
-                            linestyle=linestyle[k],
-                            label=f"{method} @ {xy_thres[k]}m, {rot_thres[k]} deg")
+                if k == 0:
+                    axs1[i].plot(curve[0], curve[1], color=colors[method],
+                                 linestyle=linestyle[k], linewidth=3,
+                                 label=f"{method}")
+                else:
+                    axs1[i].plot(curve[0], curve[1], color=colors[method],
+                                 linestyle=linestyle[k])
+
         axs1[i].set_title(f"{traverse}", fontsize=16)
         axs1[i].set_aspect(0.8/axs1[i].get_data_ratio(), adjustable='box')
         axs1[i].set_xlabel("Distance travelled (m)", fontsize=16)
-        axs1[i].set_ylabel("Proportion of trials successfully localized", fontsize=16)
+        axs1[i].set_ylabel("Propn successfully localized", fontsize=16)
     axs1[-1].legend()
     old_fig_size = fig1.get_size_inches()
-    fig1.set_size_inches(old_fig_size[0] * 2.0, old_fig_size[1] * 2.0)
+    fig1.set_size_inches(old_fig_size[0] * 3.0, old_fig_size[1] * 1.0)
     fig1.tight_layout()
     plt.show()
 
