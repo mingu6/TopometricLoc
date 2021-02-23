@@ -23,7 +23,7 @@ measurement:
   num_inliers: 15
   inlier_threshold: 1.0
   confidence: 0.99
-  num_verif: 3
+  num_verif: 2
 other:
   prior_off: 0.3
   convergence_score: 0.98

@@ -183,6 +183,14 @@ if __name__ == "__main__":
             q_on_map = np.logical_and(qxy < on_xy_thres1,
                                       qrot * 180. / np.pi < on_rot_thres1)
 
+            import matplotlib.pyplot as plt
+            ref_l = 0
+            ref_u = 50
+
+            refPoses = refMap.gt_poses[ref_l:ref_u, :]
+            start_ind = 5
+            end_ind = 25
+
             # save results
             scores = []
             checks = []
@@ -199,20 +207,20 @@ if __name__ == "__main__":
 
             # setup localization object
             loc = Localization(params, refMap)
-            for i in tqdm(range(len(tstampsQ)), desc="extract", leave=False):
+            for i in tqdm(range(start_ind, end_ind)):
 
                 qLoc = read_local_raw(query, tstampsQ[i])
                 qGlb = query_global[i]
                 qmu, qSigma = muQ[i], SigmaQ[i]
                 # usually at t=0 there is a meas. update with no motion
                 # separate initialization performed
-                if i == 0:
+                if i == start_ind:
                     prior = np.log(loc.belief)
                     lhood = loc.init(qmu, qSigma, qGlb, qLoc)
                     meas_lhoods.append(np.log(lhood))
                 else:
                     # update state estimate
-                    trans_mat = loc._update_motion(qmu, qSigma).copy()
+                    trans_mat = loc._update_motion(qmu, qSigma)
                     lhood = loc._update_meas(qGlb, qLoc)
                     trans_mat.data = np.log(trans_mat.data)
                     meas_lhoods.append(np.log(lhood))
@@ -281,25 +289,37 @@ if __name__ == "__main__":
                                     "off_probs": off_prob_bw,
                                     "on_status": q_on_map}}
 
-            # create new folder to store results
+            # add belief plot
+            fig1, ax1 = plt.subplots(figsize=(5, 2))
+            xvals = np.arange(ref_u - ref_l)
+            yvals = fw_beliefs[0, ref_l:ref_u]
+            ax1.bar(xvals, yvals)
+            #ax1.set_ylim(0., 0.7)
+            ax1.set_yticks([])
+            fig1.tight_layout()
 
-            rpath = path.join(RESULTS_DIR, "loop_closure")
-            os.makedirs(rpath, exist_ok=True)  # create base results folder if required
-            trials = [int(p.split("_")[-1]) for p in os.listdir(rpath)
-                      if "_".join(p.split("_")[:-1]) == description]
-            if len(trials) > 0:
-                trial_count = max(trials) + 1
-                results_path = path.join(rpath, f"{description}_{trial_count}")
-            else:
-                results_path = path.join(rpath, f"{description}_2")
-            os.makedirs(results_path)
+            fig2, ax2 = plt.subplots(figsize=(5, 2))
+            xvals = np.arange(ref_u - ref_l)
+            yvals = fw_beliefs[-1, ref_l:ref_u]
+            ax2.bar(xvals, yvals)
+            #ax2.set_ylim(0., 0.7)
+            ax2.set_yticks([])
+            fig2.tight_layout()
 
-            # dump results
+            fig3, ax3 = plt.subplots(figsize=(5, 2))
+            xvals = np.arange(ref_u - ref_l)
+            yvals = bw_beliefs[-1, ref_l:ref_u]
+            ax3.bar(xvals, yvals)
+            #ax3.set_ylim(0., 0.7)
+            ax3.set_yticks([])
+            fig3.tight_layout()
 
-            with open(path.join(results_path, "results.pickle"), "wb") as f:
-                pickle.dump(results, f)
+            fig4, ax4 = plt.subplots(figsize=(5, 2))
+            xvals = np.arange(ref_u - ref_l)
+            yvals = bw_beliefs[0, ref_l:ref_u]
+            ax4.bar(xvals, yvals)
+            #ax4.set_ylim(0., 0.7)
+            ax4.set_yticks([])
+            fig4.tight_layout()
+            plt.show()
 
-            # save parameters into results folder for records
-
-            with open(path.join(results_path, 'params.yaml'), 'w') as f:
-                yaml.dump(params, f)

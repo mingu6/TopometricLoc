@@ -16,7 +16,7 @@ from settings import RESULTS_DIR
 self_dirpath = os.path.dirname(os.path.abspath(__file__))
 
 colors = {"Ours": "green",
-          "No Verif": "yellow",
+          "No Verif": "m",
           "No Off": "purple",
           "Baseline": "blue",
           "Xu20": "red",
@@ -137,10 +137,10 @@ def propn_loc_at_dist_curve(score_ind, successes, dists, loc_indices):
     # at optimal score, look at success rate and localized status
     success_at_ind = successes[:, score_ind]
     dists_at_ind = dists[:, score_ind]
-    loc_ind_at_ind = loc_indices[:, score_ind]
+    #loc_ind_at_ind = loc_indices[:, score_ind]
     # look at proportion localized by each distance
     localized_by = dists_at_ind[:, None] < dist_uniform[None, :]
-    localized_by = np.logical_and(localized_by, (loc_ind_at_ind != -1)[:, None])
+    #localized_by = np.logical_and(localized_by, (loc_ind_at_ind != -1)[:, None])
     success_by = np.logical_and(localized_by, success_at_ind[:, None])
     propn_success_by = success_by.mean(axis=0)
     return dist_uniform, propn_success_by
@@ -155,6 +155,7 @@ def main(args):
     # keep record of curve data
     success_curves = {}
     propn_curves = {}
+    best_pts = {}
     for traverse, method, fname in df_desc_rows:
         results = load_results(fname)
         if results is not None:
@@ -166,6 +167,11 @@ def main(args):
             if traverse not in propn_curves:
                 propn_curves[traverse] = {}
                 propn_curves[traverse][method] = []
+            elif method not in propn_curves[traverse]:
+                propn_curves[traverse][method] = []
+            if traverse not in best_pts:
+                best_pts[traverse] = {}
+                best_pts[traverse][method] = []
             elif method not in propn_curves[traverse]:
                 propn_curves[traverse][method] = []
             for xy_t, r_t in zip(xy_thres, rot_thres):
@@ -201,33 +207,43 @@ def main(args):
                 success_curves[traverse][method].append((x, y))
                 # proportion localized @ dist curve
                 score_ind_at_best = np.argmax(y)  # highest success
-                if np.any(y > 0.97):
-                    score_ind_at_best = min(score_ind_at_best, np.argmax(y > 0.99))
+                best_pts[traverse][method] = (x[score_ind_at_best], y[score_ind_at_best])
+                # if np.any(y > 0.97):
+                    # score_ind_at_best = min(score_ind_at_best, np.argmax(y > 0.97))
+                # if traverse == "Sun Detour" and method == "Stenborg20":
+                    # import pdb; pdb.set_trace()
                 dist_by, success_by = propn_loc_at_dist_curve(
                     score_ind_at_best, success_results, dist_results, loc_inds)
                 propn_curves[traverse][method].append((dist_by, success_by))
 
     # plot curves
     fig, axs = plt.subplots(1, len(success_curves.keys()))
-    fig.suptitle("Proportion success by mean distance to localize (m)",
+    fig.suptitle("Global Localization: Proportion success by mean distance to localize (m)",
                  fontsize=24)
     for i, (traverse, save) in enumerate(success_curves.items()):
         for j, (method, curves) in enumerate(save.items()):
             if method != "Baseline":
                 for k, curve in enumerate(curves):
+                    zorder = 50 if method == "Ours" else 10
                     if k == 0:
                         axs[i].plot(curve[0], curve[1], color=colors[method],
                                     linestyle=linestyle[k], linewidth=3,
-                                    label=f"{method}")
+                                    label=f"{method}", zorder=zorder)
                     else:
                         axs[i].plot(curve[0], curve[1], color=colors[method],
                                     linestyle=linestyle[k])
             else:
                 axs[i].scatter([curve[0][0]], [curve[1][0]], color=colors[method],
                                s=50, label=f"{method}")
+            # plot best points on curve
+            if method != "Baseline":
+                pt = best_pts[traverse][method]
+                axs[i].scatter([pt[0]], [pt[1]], s=250, color=colors[method],
+                               edgecolors='black', marker='*', zorder=50)
         axs[i].set_title(f"{traverse}", fontsize=16)
         axs[i].set_xlabel("Mean distance travelled (m)", fontsize=16)
         axs[i].set_ylabel("Proportion of successful trials", fontsize=16)
+        axs[i].set_ylim(0.4, 1.)
         axs[i].set_aspect(0.8/axs[i].get_data_ratio(), adjustable='box')
     axs[-1].legend()
     old_fig_size = fig.get_size_inches()
@@ -236,20 +252,22 @@ def main(args):
 
     # plot curves
     fig1, axs1 = plt.subplots(1, len(propn_curves.keys()))
-    fig1.suptitle("Proportion successfully localized by distance",
+    fig1.suptitle("Global Localization: Proportion successfully localized by distance",
                   fontsize=24)
     for i, (traverse, save) in enumerate(propn_curves.items()):
         for j, (method, curves) in enumerate(save.items()):
             for k, curve in enumerate(curves):
+                zorder = 50 if method == "Ours" else 10
                 if k == 0:
                     axs1[i].plot(curve[0], curve[1], color=colors[method],
                                  linestyle=linestyle[k], linewidth=3,
-                                 label=f"{method}")
+                                 label=f"{method}", zorder=zorder)
                 else:
                     axs1[i].plot(curve[0], curve[1], color=colors[method],
                                  linestyle=linestyle[k])
 
         axs1[i].set_title(f"{traverse}", fontsize=16)
+        axs1[i].set_ylim(0., 1.)
         axs1[i].set_aspect(0.8/axs1[i].get_data_ratio(), adjustable='box')
         axs1[i].set_xlabel("Distance travelled (m)", fontsize=16)
         axs1[i].set_ylabel("Propn successfully localized", fontsize=16)

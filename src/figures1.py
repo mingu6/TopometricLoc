@@ -1,7 +1,5 @@
 import os.path as path
 import matplotlib.pyplot as plt
-from matplotlib import rc
-rc('font',**{'family':'sans-serif'})
 import pandas as pd
 
 map_path = '/Users/ceebskent/Downloads/map-2.png'
@@ -12,8 +10,8 @@ traverses_date = ['2015-05-19-14-06-38',
 traverses = ['Overcast', 'Dusk', 'Night', 'Rain', 'Sun']
 lims = {"Sun": (1429864457133615, 1429865645036369),
         "Rain": (1438176485086715, 1438177255233697)}
-intervals = [0., 0.00010, 0.00012, 0.00030, 0.00040]
-intervals1 = [0., 0.00010, 0.00015, 0.00023, 0.00026]
+intervals = [0., 0.00010, 0.00020, 0.00030, 0.00040]
+intervals1 = [0., 0.00010, 0.00020, 0.00023, 0.00026]
 
 lat_lims = [51.75, 51.764]
 lon_lims = [-1.269, -1.251]
@@ -33,11 +31,10 @@ for i, (traverse, df) in enumerate(dfs.items()):
         df = df[mask]
     ax.scatter(df.longitude - intervals[i], df.latitude + intervals1[i], zorder=1,
                alpha= 0.5, s=20, label=traverses[i])
-    ax.set_rasterized(True)
 ax.imshow(img, zorder=0, extent=BBox, aspect='equal')
 ax.legend(fontsize=16)
 ax.axis("off")
 ax.set_xticks([])
 ax.set_yticks([])
 fig.tight_layout()
-plt.savefig("/Users/ceebskent/fig.pdf", dpi=200)
+plt.show()

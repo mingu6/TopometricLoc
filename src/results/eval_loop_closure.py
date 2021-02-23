@@ -15,7 +15,7 @@ from settings import RESULTS_DIR
 self_dirpath = os.path.dirname(os.path.abspath(__file__))
 
 colors = {"Ours": "green",
-          "No Verif": "yellow",
+          "No Verif": "m",
           "No Off": "purple",
           "Baseline": "blue",
           "Xu20": "red",
@@ -109,27 +109,31 @@ def main(args):
 
     # plot curves
     fig, axs = plt.subplots(1, len(PR_curves.keys()))
-    fig.suptitle(f"Loop Closure Precision/Recall at {xy_thres}m, {rot_thres} deg",
+    fig.suptitle("Loop Closure Detection: Precision/Recall",
                  fontsize=24)
     for i, (traverse, save) in enumerate(PR_curves.items()):
         for j, (method, curves) in enumerate(save.items()):
             if method != "Baseline":
+                if method == 'Ours':
+                    zorder = 20
+                else:
+                    zorder = 5
                 for k, (fwbw, curve) in enumerate(curves.items()):
                     axs[i].plot(curve[1], curve[0], color=colors[method],
                                 linestyle=linestyle[k],
                                 linewidth=3,
-                                label=f"{method} {fwbw}")
+                                label=f"{method} {fwbw}", zorder=zorder)
             else:
                 axs[i].scatter([curve[1][0]], [curve[0][0]], color=colors[method],
                                s=50, label=f"{method}")
         axs[i].set_title(f"{traverse}", fontsize=16)
         axs[i].set_xlabel("Recall", fontsize=16)
         axs[i].set_ylabel("Precision", fontsize=16)
-        axs[i].set_ylim(0.6, 1.)
+        axs[i].set_ylim(0.8, 1.)
         axs[i].set_aspect(0.8/axs[i].get_data_ratio(), adjustable='box')
     axs[-1].legend()
     old_fig_size = fig.get_size_inches()
-    fig.set_size_inches(old_fig_size[0] * 2.0, old_fig_size[1] * 2.0)
+    fig.set_size_inches(old_fig_size[0] * 3.0, old_fig_size[1] * 1.5)
     fig.tight_layout()
     plt.show()
 
