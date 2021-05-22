@@ -1,0 +1,7 @@
+motion:
+  lower: -2
+  upper: 10
+measurement:
+  delta: 5.0
+other:
+  convergence_window: 6

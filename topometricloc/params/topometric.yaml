@@ -1,0 +1,23 @@
+motion:
+  p_off_off: 0.8
+  p_off_max: 1.0
+  night:
+    - 0.5
+    - 0.1
+    - 0.2
+    - 10.
+  other:
+    - 0.5
+    - 0.1
+    - 0.2
+    - 2.
+measurement:
+  delta: 3.0
+  pca_dim: 4096
+  # noisy off-map detection prob.
+  p_off_off: 0.6
+  p_on_on: 0.55
+other:
+  prior_off: 0.3
+  convergence_window: 6
+  off_state: True

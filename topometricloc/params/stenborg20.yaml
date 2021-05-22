@@ -1,0 +1,7 @@
+motion:
+  width: 10
+  sigma: 1.0
+measurement:
+  sigma: 0.4
+other:
+  convergence_window: 6

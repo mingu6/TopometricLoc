@@ -17,6 +17,5 @@ setup(
         'seaborn',
         'openpyxl'
     ],
-    package_dir = {'': 'src/'}
 )
 
