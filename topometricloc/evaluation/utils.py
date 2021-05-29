@@ -10,15 +10,11 @@ convergence_score_thresh = np.hstack((np.linspace(0., 0.9, 45, endpoint=False),
 colors = {"Ours": "green",
           "No Off": "purple",
           "Baseline": "blue",
-          "Xu20": "red",
+          "Xu20Topo": "red",
           "Stenborg20": "orange"}
 
 
-def load_results(fname, exper='loop_closure', suffix=''):
-    """
-    Load saved results from wakeup and loop closure experiments. Returns None if no file.
-    """
-    fpath = path.join(RESULTS_DIR, exper, fname, f"results{suffix}.npz")
+def load_results(fpath):
     try:
         results = np.load(fpath)
     except FileNotFoundError as e:

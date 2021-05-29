@@ -40,31 +40,60 @@ def create_results_directory(args, query_traverse, method_name, exper):
 
 def max_nonzero(mat, axis=None):
     '''Takes max of sparse matrix along an axis ignoring zeros'''
+    eps = 1.
     min_val = mat.min()
     temp = mat.copy()
-    temp.data -= min_val  # raises all nonzero vals above zero if below
+    temp.data -= min_val - eps  # raises all nonzero vals above zero if below
     max_vals = temp.max(axis=axis)
     if axis is not None:
-        max_vals.data += min_val  # sparse matrix case is axis provided
+        max_vals.data += min_val - eps  # sparse matrix case is axis provided
     else:
-        max_vals += min_val  # scalar case
+        max_vals += min_val - eps  # scalar case
     return max_vals
+
 
 
 def logsumexp_nonzero(a, axis=None):
     '''logsumexp function for nonzero values along axis for sparse matrix'''
-    eps = 1e-30  # ensure no nans from taking log of 0
+    eps = 1.  # ensure that no elements zeroed out in sparse matrix, making element disappear
     a_max = max_nonzero(a)
     temp = a.copy()
-    temp.data = np.exp(a.data - a_max)
+    temp.data = np.exp(a.data - a_max - eps)
     if axis is None:
-        lse = np.log(temp.data.sum()) + a_max
+        lse = np.log(temp.data.sum()) + a_max + eps
     else:
         sumexp = np.asarray(temp.sum(axis=axis)).squeeze()
-        lse = np.log(sumexp + eps) + a_max
+        lse = np.log(sumexp) + a_max + eps
     return lse
 
-
+def logsumexp_nonzero(a, axis=None, vec_bc_ind=None):
+    '''logsumexp function for nonzero values along axis for sparse matrix'''
+    eps = 1.  # ensure that no elements zeroed out in sparse matrix, making element disappear
+    if axis is not None:
+        a_max = max_nonzero(a, axis=axis).toarray().squeeze()
+    else:
+        a_max = max_nonzero(a, axis=None)
+    temp = a.copy()
+    if axis is None:
+        temp.data = np.exp(a.data - a_max)
+        lse = np.log(temp.data.sum()) + a_max
+    elif axis == 0:
+        temp = temp.tocsc()
+        temp = sparse_nz_sum(temp, -a_max - eps, vec_bc_ind=vec_bc_ind)
+        temp.data = np.exp(temp.data)
+        sumexp = np.asarray(temp.sum(axis=axis)).squeeze()
+        if np.any(sumexp == 0.):
+            import pdb; pdb.set_trace()
+        lse = np.log(sumexp) + a_max + eps
+    elif axis == 1:
+        temp = temp.tocsr()
+        temp = sparse_nz_sum(temp, -a_max - eps, vec_bc_ind=vec_bc_ind)
+        temp.data = np.exp(temp.data)
+        sumexp = np.asarray(temp.sum(axis=axis)).squeeze()
+        if np.any(sumexp == 0.):
+            import pdb; pdb.set_trace()
+        lse = np.log(sumexp) + a_max + eps
+    return lse
 def bc_vec_to_data_inds(mat):
     n_axes = len(mat.indptr)
     bc_vec = np.empty(len(mat.data), dtype=np.int32)
@@ -117,6 +146,18 @@ def pose_diff(poses1, poses2):
         diff12[i, ...] = d1
     diff12 = np.squeeze(diff12)
     return diff12
+
+
+def pose_err_elementwise(poses1, poses2, degrees=False):
+    assert poses1.shape == poses2.shape
+    assert poses1.ndim == 2 and poses2.ndim == 2
+    diff12 = poses1 - poses2
+    t_err = np.linalg.norm(diff12[:, :2], axis=1)
+    R_err = np.abs(diff12[:, -1])
+    R_err[R_err > np.pi] = 2. * np.pi - R_err[R_err > np.pi]
+    if degrees:
+        R_err *= 180. / np.pi
+    return t_err, R_err
 
 
 def pose_err(poses1, poses2, degrees=False):

@@ -141,3 +141,4 @@ cython_debug/
 *.ipynb
 *.DS_Store
 topometricloc/feature_extraction/models/**
+topometricloc/evaluation/eval_files/*

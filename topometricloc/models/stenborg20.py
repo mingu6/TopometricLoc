@@ -20,6 +20,7 @@ def create_transition_matrix(odom_mu, odom_segments, sigma):
     N, width = odom_segments.shape
     prob = np.exp(- (odom_mu[0] - odom_segments) ** 2 / (2 * sigma ** 2))
     mat = sparse.diags(prob.T, offsets=np.arange(width), shape=(N, N), format="csr", dtype=np.float64)
+    #np.clip(mat.data, 1e-2, np.inf, out=mat.data) 
     normalize(mat, norm='l1', axis=1, copy=False)
     return mat.tocsc()
 
@@ -64,7 +65,6 @@ class Localization(LocalizationBase):
 
         self.belief = np.ones(ref_map.N) / ref_map.N
         self.odom_segments = odom_segments(ref_map.odom, self.motion_params['width'])
-        self.ref_map = ref_map
 
     def init(self, global_desc):
         lhood = self._update_meas(global_desc)

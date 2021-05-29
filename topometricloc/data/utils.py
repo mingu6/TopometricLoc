@@ -12,11 +12,9 @@ def load_pose_data(traverse, fname, ind=None):
     df = pd.read_csv(path.join(DATA_DIR, traverse, 'subsampled', fname))
     ind_end = len(df) if ind is None else ind
     tstamps = df['ts'][:ind_end].to_numpy()
-    gt_pose = df[['x', 'y', 'theta']].to_numpy()\
-        [:ind_end].astype(np.float32)
-    vo_mu = df[['mu_x', 'mu_y', 'mu_theta']].to_numpy()\
-        [:ind_end].astype(np.float32)
-    vo_Sigma = df.iloc[:, -9:].to_numpy().reshape((-1, 3, 3))
+    gt_pose = df[['x', 'y', 'theta']].to_numpy()[:ind_end].astype(np.float32)
+    vo_mu = df[['mu_x', 'mu_y', 'mu_theta']].to_numpy()[:ind_end].astype(np.float32)
+    vo_Sigma = df.iloc[:, -9:].to_numpy().reshape((-1, 3, 3)).astype(np.float32)
     return tstamps, gt_pose, vo_mu, vo_Sigma
 
 
@@ -55,10 +53,8 @@ def preprocess_robotcar(traverse, cutoffs=None):
 
     # manually cutoff dusk, RTK fails before end of traverse
 
-    dusk_delete_inds_vo = np.logical_and(traverse == 'dusk',
-                                         vo_ts > 1416587217921391)
-    dusk_delete_inds_gt = np.logical_and(traverse == 'dusk',
-                                         gt_ts > 1416587217921391)
+    dusk_delete_inds_vo = np.logical_and(traverse == 'dusk', vo_ts > 1416587217921391)
+    dusk_delete_inds_gt = np.logical_and(traverse == 'dusk', gt_ts > 1416587217921391)
     if len(dusk_delete_inds_gt):
         gt_ts = np.delete(gt_ts, dusk_delete_inds_gt, axis=0)
         gt_poses = np.delete(gt_poses, dusk_delete_inds_gt, axis=0)
@@ -67,8 +63,7 @@ def preprocess_robotcar(traverse, cutoffs=None):
         vo = np.delete(vo, dusk_delete_inds_vo, axis=0)
 
     # accumulate vo until enough distance has been travelled for stable
-    # odometry models. Odometry model does not behave well with small/backward
-    # motion
+    # odometry models. Odometry model does not behave well with small/backward motion
 
     od_accum = SE2(np.zeros(3))
     gt_ts1 = [vo_ts[0]]
@@ -78,6 +73,7 @@ def preprocess_robotcar(traverse, cutoffs=None):
 
     for ts, od in zip(vo_ts, vo):
         xy_mag, th_mag = od_accum.magnitude()
+        #if xy_mag + th_mag * 15. > 0.5:
         if xy_mag > 0.5 or th_mag > 5. * np.pi / 180.:
             if ts in gt_ts:
                 gt_ts1.append(ts)

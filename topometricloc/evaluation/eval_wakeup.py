@@ -20,7 +20,8 @@ def generate_pr_curves(results, xy_thres, rot_thres):
     n_trials = scores.shape[0]
     # identify which trials converged before end of sequence and if so, if they converged to the right place
     pred_within_tol = utils.check_gt_err_within_tol(xy_errs, rot_errs, xy_thres, rot_thres)
-    tstep_converged = utils.tstep_first_converged(utils.convergence_score_thresh, scores)
+    scores_thres = scores.min() + (scores.max() - scores.min()) * utils.convergence_score_thresh
+    tstep_converged = utils.tstep_first_converged(scores_thres, scores)
     converged_mask = tstep_converged != -1
     within_gt_tol = pred_within_tol[np.arange(n_trials), tstep_converged]
     gt_on_mask = results['gt_on_map_mask'][np.arange(n_trials), tstep_converged]

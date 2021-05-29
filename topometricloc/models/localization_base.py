@@ -31,7 +31,7 @@ class LocalizationBase:
         self._update_meas(global_desc)
         return None
 
-    def converged(self, belief=None):
+    def check_convergence(self, belief=None):
         """
         Convergence detection for belief. Returns pose estimate and convergence score. Overwrite for non-discrete filters or alternative methods.
         Args:

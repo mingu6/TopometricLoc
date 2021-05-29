@@ -5,7 +5,8 @@ setup(
     version='0.1.0',
     install_requires=[
         'numpy>=1.19',
-        'scipy>=1.6.0',
+        'scipy>=1.4.0',
+        #'scipy>=1.6.0',
         'opencv-python',
         'openvino',
         'pandas',

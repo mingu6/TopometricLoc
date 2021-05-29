@@ -80,7 +80,9 @@ def generate_traverse_robotcar(traverse, params, gt_ts, gt_poses, vo_ts, vo,
         # if moved far enough, create new node
         xy_mag = np.linalg.norm(mu_accum[:2])
         theta_mag = np.abs(mu_accum[2]) * 180 / np.pi
-        if xy_mag > xy_thres or theta_mag > theta_thres:
+        weighted = xy_mag + theta_mag * np.pi / 180. * theta_thres
+        #if xy_mag > xy_thres or theta_mag > theta_thres:
+        if weighted > xy_thres:
             curr_pose = np.squeeze(gt_poses[np.where(gt_ts == vo_ts[i])])
             # if image is missing, but vo entry exists, skip to next frame
             if len(curr_pose) == 0:
@@ -94,8 +96,7 @@ def generate_traverse_robotcar(traverse, params, gt_ts, gt_poses, vo_ts, vo,
             mu_accum = np.zeros(3)
             Sigma_accum = np.zeros((3, 3))
         # update state estimate
-        mu_accum, Sigma_accum = motion_update(params, vo[i],
-                                              mu_accum, Sigma_accum)
+        mu_accum, Sigma_accum = motion_update(params, vo[i], mu_accum, Sigma_accum)
 
     tstamps = np.asarray(tstamps, dtype=np.int64)
     gt_traverse = np.vstack(gt_traverse)
@@ -124,8 +125,7 @@ def save_traverse(traverse, xy_thres, theta_thres,
                       np.asarray(odom_Sigma).reshape(-1, 9)))
     df = pd.DataFrame(data, columns=columns)
     df = df.astype({"ts": int})
-    fout = path.join(save_path,
-                     f'xy_{xy_thres:.0f}_t_{theta_thres:.0f}.csv')
+    fout = path.join(save_path, f'xy_{xy_thres:.0f}_t_{theta_thres:.0f}.csv')
     df.to_csv(fout, index=False)
     return None
 
@@ -135,7 +135,7 @@ def load_params_robotcar(params_fname, traverse):
     if params_fname:
         params_file = params_fname
     else:
-        params_file = "ours.yaml"
+        params_file = "topometric.yaml"
 
     params_path = path.abspath(path.join(self_dirpath, "..", "params"))
     with open(path.join(params_path, params_file), 'r') as f:
@@ -175,8 +175,7 @@ if __name__ == "__main__":
         # load gt, odometry and tstamp data
 
         cutoff_inds = None if traverse not in cutoffs else cutoffs[traverse]
-        gt_tstamps, gt_poses, odom_ts, odom = preprocess_robotcar(traverse,
-                                                                  cutoff_inds)
+        gt_tstamps, gt_poses, odom_ts, odom = preprocess_robotcar(traverse, cutoff_inds)
 
         # if RobotCar, load saved motion model parameters
 
@@ -184,10 +183,8 @@ if __name__ == "__main__":
 
         # subsample traverse using increments based on ground truth poses
 
-        ts_trav, gt_trav, odom_trav = generate_traverse_robotcar(
-            traverse, params, gt_tstamps, gt_poses, odom_ts, odom,
-            args.xy_thres, args.theta_thres)
+        ts_trav, gt_trav, odom_trav = generate_traverse_robotcar(traverse, params, gt_tstamps, gt_poses,
+                odom_ts, odom, args.xy_thres, args.theta_thres)
 
         # save traverse data to disk
-        save_traverse(traverse, args.xy_thres, args.theta_thres,
-                      ts_trav, gt_trav, odom_trav)
+        save_traverse(traverse, args.xy_thres, args.theta_thres, ts_trav, gt_trav, odom_trav)

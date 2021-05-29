@@ -33,16 +33,16 @@ def odom_segments(odom, width):
     # entry i, d of relpose contains relative pose from node i, i+d
     # for d <= width estimated from VO
     # note: last node has no outward connections
-    relpose = np.zeros((N, width+2, 3))
+    relpose = np.zeros((N, width+2, 3), dtype=np.float32)
     # for each source node/connection compute relative pose
     # include one node more than width for endpoint for furthest transition
-    agg_trans = SE2(np.zeros((N, 3)))
+    agg_trans = SE2(np.zeros((N, 3), dtype=np.float32))
     for w in range(1, width+2):  # self-transition has 0 relative pose
         agg_trans = agg_trans[:-1] * SE2(odom[w:])
         relpose[:-w, w, :] = agg_trans.to_vec()
 
     # compute start/end segments for non-self transitions
-    segments = np.zeros((N, width+1, 2, 3))
+    segments = np.zeros((N, width+1, 2, 3), dtype=np.float32)
     # start segment j^*_-: 
     segments[:, 1:, 0, :] = 0.5 * (relpose[:, :-2, :] + relpose[:, 1:-1, :])
     # end segment j^*_+

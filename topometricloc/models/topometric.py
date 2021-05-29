@@ -53,7 +53,9 @@ def transition_probs(odom_mu, odom_sigma, ref_map, p_off_max):
     # compute minimum MH distance between query and segments
     segl = ref_map.odom_segments[..., 0, :].reshape(-1, 3)
     segu = ref_map.odom_segments[..., 1, :].reshape(-1, 3)
-    sqdis = min_MN_dist_seg(odom_mu, odom_sigma, segl, segu).reshape(N, wd+1)
+    #import pdb; pdb.set_trace()
+    #sqdis = min_MN_dist_seg(odom_mu, odom_sigma, segl, segu).reshape(N, wd+1)
+    sqdis = min_MN_dist_seg(odom_mu, odom_sigma, segl, segu).reshape(N, -1)
     sqdis = np.clip(sqdis, 0., 9.)
     # compute relative likelihoods odomd for transition probabilities
     # to within map nodes
@@ -62,7 +64,7 @@ def transition_probs(odom_mu, odom_sigma, ref_map, p_off_max):
     # apply chisq cdf to compute within map prob. Evaluating cdf is same as
     # prob sqmndist <= x. Intuitively, P(sqMN <= x) gives an indication of
     # off-map likelihood between 0, 1
-    off_prob = np.clip(chi2.cdf(sqdis.min(axis=1), 3) * p_off_max, 0.02, 1.)
+    off_prob = np.clip(chi2.cdf(sqdis.min(axis=1), 3) * p_off_max, 0.02, 1.).astype(np.float32)
     within_prob = qlhood * (1. - off_prob)[:, None]
     return within_prob, off_prob
 
@@ -81,18 +83,14 @@ class Localization(LocalizationBase):
     def __init__(self, params, ref_map):
         super().__init__(params, ref_map)
         self.off_state = self.other_params["off_state"]
-
-        # initialize belief
         N = self.ref_map.N + 1 if self.off_state else self.ref_map.N
-        self.belief = np.ones(N)
+        self.belief = np.ones(N, dtype=np.float32)
         if self.off_state:
             self.belief[:-1] *= (1. - self.other_params["prior_off"]) / ref_map.N
             self.belief[-1] = self.other_params["prior_off"]
 
-        # reference map
         self.odom_segments = ref_map.odom_segments.copy()
 
-        # meas params
         self.lamb = None
         self.off_k = 20
 
@@ -123,9 +121,9 @@ class Localization(LocalizationBase):
             # incorporate transitions to/from off-map state in matrix
             trans_mat.resize((N+1, N+1))
             # transition matrix component for from off-map state
-            from_off_prob = np.ones(N+1) * (1. - p_off_off) / N
+            from_off_prob = np.ones(N+1, dtype=np.float32) * (1. - p_off_off) / N
             from_off_prob[-1] = p_off_off
-            from_off_transitions = csc_matrix((from_off_prob, (np.ones(N+1) * N, np.arange(N+1))), shape=(N+1, N+1))
+            from_off_transitions = csc_matrix((from_off_prob, (np.ones(N+1, dtype=np.float32) * N, np.arange(N+1))), shape=(N+1, N+1))
             # transition matrix component for to off probabilities
             off += 1. - off - np.asarray(trans_mat.sum(axis=1))[:-1, 0]
             to_off_transitions = csc_matrix((off, (np.arange(N), np.ones(N) * N)), shape=(N+1, N+1))

@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.sparse as sparse
+from sklearn.preprocessing import normalize
 
 from .localization_base import LocalizationBase
 
@@ -29,6 +30,7 @@ def create_transition_matrix(N, lower, upper):
     assert upper > lower
     data = np.ones((upper - lower, N)) / (upper - lower)
     mat = sparse.diags(data, offsets=np.arange(lower, upper), shape=(N, N), format="csr", dtype=np.float64)
+    mat = normalize(mat, norm='l1', axis=1, copy=False)
     return mat.tocsc()
 
 
@@ -37,7 +39,6 @@ class Localization(LocalizationBase):
         super().__init__(params, ref_map)
 
         self.belief = np.ones(ref_map.N) / ref_map.N
-        self.ref_map = ref_map
         self.E = create_transition_matrix(ref_map.N, self.motion_params['lower'], self.motion_params['upper'])
 
         self.delta = self.meas_params['delta']

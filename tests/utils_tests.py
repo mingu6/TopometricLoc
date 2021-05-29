@@ -10,7 +10,7 @@ class TestSparseUtils(unittest.TestCase):
         N = 25
         W = 5
         self.mat = sparse.random(N, N, density=0.3, format='csr', dtype=np.float64)
-        self.mat.data -= 2. * self.mat.data.max()
+        self.mat.data -= 25. * self.mat.data.max()
         self.vec = np.random.randn(N)
 
     def test_max_nonzero(self):
@@ -61,7 +61,7 @@ class TestSparseUtils(unittest.TestCase):
             res = logsumexp(self.mat.data[indptr[i]:indptr[i+1]])
             lse_0_true.append(res)
         lse_0_true = np.array(lse_0_true)
-        np.testing.assert_allclose(lse_0, lse_0_true)
+        np.testing.assert_allclose(lse_0, lse_0_true, atol=1e-25, rtol=0)
         # LSE along axes 1
         lse_1 = logsumexp_nonzero(self.mat, axis=1)
         self.mat = self.mat.tocsr()
@@ -71,7 +71,7 @@ class TestSparseUtils(unittest.TestCase):
             res = logsumexp(self.mat.data[indptr[i]:indptr[i+1]])
             lse_1_true.append(res)
         lse_1_true = np.array(lse_1_true)
-        np.testing.assert_allclose(lse_1, lse_1_true)
+        np.testing.assert_allclose(lse_1, lse_1_true, atol=1e-25, rtol=0)
 
     def test_sparse_nz_sum(self):
         from topometricloc.utils import sparse_nz_sum
@@ -81,7 +81,7 @@ class TestSparseUtils(unittest.TestCase):
         for i in range(self.mat.shape[0]):
             indptr = col_sum_true.indptr
             col_sum_true.data[indptr[i]:indptr[i+1]] += self.vec[i]
-        np.testing.assert_allclose(col_sum_true.toarray(), col_sum.toarray())
+        np.testing.assert_allclose(col_sum_true.toarray(), col_sum.toarray(), atol=1e-25, rtol=0)
         # change to csc representation, assumes vec is a row vector
         self.mat = self.mat.tocsc()
         row_sum = sparse_nz_sum(self.mat, self.vec)
@@ -89,7 +89,7 @@ class TestSparseUtils(unittest.TestCase):
         for i in range(self.mat.shape[0]):
             indptr = row_sum_true.indptr
             row_sum_true.data[indptr[i]:indptr[i+1]] += self.vec[i]
-        np.testing.assert_allclose(row_sum_true.toarray(), row_sum.toarray())
+        np.testing.assert_allclose(row_sum_true.toarray(), row_sum.toarray(), atol=1e-25, rtol=0)
 
 
 if __name__ == '__main__':

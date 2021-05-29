@@ -111,8 +111,7 @@ class SE2:
         return self.__class__(xythetainv)
 
     def to_vec(self):
-        return np.squeeze(np.hstack((self._xy,
-                                     np.atleast_2d(self._theta).T)))
+        return np.squeeze(np.hstack((self._xy, np.atleast_2d(self._theta).T)))
 
     def magnitude(self, degrees=False):
         theta = self._theta * 180. / np.pi if degrees else self._theta
