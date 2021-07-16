@@ -1,3 +1,5 @@
+# CODE IS NOT READY FOR RELEASE, WILL BE CLEANING UP IN COMING WEEKS
+
 # Probabilistic Topometric Localization
 
 Run the steps in the following order to get things working.
